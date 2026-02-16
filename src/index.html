@@ -20,7 +20,40 @@
             const settingsUrl = url.searchParams.has('settings') ? url.searchParams.get('settings') : './settings.json';
             const geoXformUrl = url.searchParams.has('geo_xform') ? url.searchParams.get('geo_xform') : './geo_xform.json';
             const transformsUrl = url.searchParams.has('transforms') ? url.searchParams.get('transforms') : './transforms.json';
-            const contentUrl = url.searchParams.has('content') ? url.searchParams.get('content') : './scene.compressed.ply';
+            const hasContentOverride = url.searchParams.has('content');
+            const contentOverrideUrl = hasContentOverride ? url.searchParams.get('content') : null;
+
+            const resolveContent = async () => {
+                if (hasContentOverride) {
+                    return {
+                        contentUrl: contentOverrideUrl,
+                        contents: fetch(contentOverrideUrl)
+                    };
+                }
+
+                const candidates = ['./scene.compressed.ply', './scene.ply', './scene.sog'];
+                for (const candidateUrl of candidates) {
+                    try {
+                        const response = await fetch(candidateUrl);
+                        if (response.ok) {
+                            return {
+                                contentUrl: candidateUrl,
+                                contents: Promise.resolve(response)
+                            };
+                        }
+                    } catch (err) {
+                        // try the next candidate
+                    }
+                }
+
+                // preserve prior behavior if all candidates fail
+                return {
+                    contentUrl: candidates[0],
+                    contents: fetch(candidates[0])
+                };
+            };
+
+            const { contentUrl, contents } = await resolveContent();
             const fetchJsonOrDefault = async (jsonUrl, fallback) => {
                 try {
                     const response = await fetch(jsonUrl);
@@ -37,7 +70,7 @@
                 poster: posterUrl && createImage(posterUrl),
                 skyboxUrl,
                 contentUrl,
-                contents: fetch(contentUrl),
+                contents,
                 noui: url.searchParams.has('noui'),
                 noanim: url.searchParams.has('noanim'),
                 nofx: url.searchParams.has('nofx'),
