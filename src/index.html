@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <title>SuperSplat Viewer</title>
+        <title>GeoSwarm.ai Viewer r16</title>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
         <base href="">
@@ -18,7 +18,20 @@
             const posterUrl = url.searchParams.get('poster');
             const skyboxUrl = url.searchParams.get('skybox');
             const settingsUrl = url.searchParams.has('settings') ? url.searchParams.get('settings') : './settings.json';
+            const geoXformUrl = url.searchParams.has('geo_xform') ? url.searchParams.get('geo_xform') : './geo_xform.json';
+            const transformsUrl = url.searchParams.has('transforms') ? url.searchParams.get('transforms') : './transforms.json';
             const contentUrl = url.searchParams.has('content') ? url.searchParams.get('content') : './scene.compressed.ply';
+            const fetchJsonOrDefault = async (jsonUrl, fallback) => {
+                try {
+                    const response = await fetch(jsonUrl);
+                    if (!response.ok) {
+                        return fallback;
+                    }
+                    return await response.json();
+                } catch (err) {
+                    return fallback;
+                }
+            };
 
             const sseConfig = {
                 poster: posterUrl && createImage(posterUrl),
@@ -39,7 +52,9 @@
 
             window.sse = {
                 config: sseConfig,
-                settings: fetch(settingsUrl).then(response => response.json())
+                settings: fetch(settingsUrl).then(response => response.json()),
+                geoXform: fetchJsonOrDefault(geoXformUrl, {}),
+                transforms: fetchJsonOrDefault(transformsUrl, { frames: [] })
             };
         </script>
     </head>
@@ -48,6 +63,12 @@
 
         <div id="ui">
             <div id="poster"></div>
+            <div id="pipFrameWrap" class="hidden">
+                <img id="pipFrameThumb" alt="Frame Thumbnail">
+            </div>
+            <div id="pipFrameFullscreen" class="hidden">
+                <img id="pipFrameFull" alt="Frame Full Resolution">
+            </div>
 
             <!-- SuperSplat Branding -->
             <a id="supersplatBranding" class="hidden" target="_blank" rel="noopener noreferrer">
@@ -213,6 +234,18 @@
                                 <span class="control-action">Reset Camera</span>
                                 <span class="control-key">R</span>
                             </div>
+                            <div class="control-item">
+                                <span class="control-action">Prev Frame</span>
+                                <span class="control-key">[</span>
+                            </div>
+                            <div class="control-item">
+                                <span class="control-action">Next Frame</span>
+                                <span class="control-key">]</span>
+                            </div>
+                            <div class="control-item">
+                                <span class="control-action">Nearest Frame</span>
+                                <span class="control-key">P</span>
+                            </div>
                         </div>
                         <div id="touchInfoPanel" class="hidden">
                             <div class="control-spacer"></div>
@@ -333,11 +366,13 @@
             </symbol>
         </svg>
 
+		<div id="logoOverlay">
+            <img src="https://m.technisync.com/geoswarm_white.png" alt="GeoSwarm.ai Logo">
+        </div>
+
         <!-- Application Script -->
         <script type="module">
-            import { main } from './index.js';
-
-            const { config, settings } = window.sse;
+            const { config, settings, geoXform, transforms } = window.sse;
             const { poster } = config;
 
             // Show the poster image
@@ -352,9 +387,48 @@
             }
 
             document.addEventListener('DOMContentLoaded', async () => {
+                const pageUrl = new URL(location.href);
+                const pageDir = new URL('./', pageUrl);
+                const entryOverride = pageUrl.searchParams.get('entry');
+                const entryCandidates = [
+                    entryOverride,
+                    // Resolve from page location (ignores <base href>)
+                    new URL('index.js', pageDir).href,
+                    new URL('../index.js', pageDir).href,
+                    new URL('public/index.js', pageDir).href,
+                    new URL('../public/index.js', pageDir).href,
+                    // Keep legacy relative fallbacks
+                    './index.js',
+                    '../public/index.js',
+                    '/public/index.js'
+                ].filter(Boolean);
+                let main = null;
+
+                for (const path of entryCandidates) {
+                    try {
+                        const mod = await import(path);
+                        if (typeof mod.main === 'function') {
+                            main = mod.main;
+                            break;
+                        }
+                    } catch (err) {
+                        // try next candidate
+                    }
+                }
+
+                if (typeof main !== 'function') {
+                    console.error('Failed to load viewer entrypoint: no candidate exports `main`.', entryCandidates);
+                    return;
+                }
+
+                const [settingsJson, geoXformJson, transformsJson] = await Promise.all([
+                    settings,
+                    geoXform,
+                    transforms
+                ]);
+
                 const canvas = document.getElementById('application-canvas');
-                const settingsJson = await settings;
-                const viewer = await main(canvas, settingsJson, config);
+                const viewer = await main(canvas, settingsJson, geoXformJson, transformsJson, config);
             });
         </script>
     </body>

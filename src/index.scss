@@ -128,6 +128,47 @@ button {
     background-repeat: no-repeat;
 }
 
+/* transform frame picture-in-picture */
+
+#pipFrameWrap {
+    position: fixed;
+    left: max(16px, env(safe-area-inset-left));
+    top: max(16px, env(safe-area-inset-top));
+    width: min(300px, 33vw);
+    z-index: 20;
+    border-radius: 8px;
+    overflow: hidden;
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.4);
+    background: rgba(0, 0, 0, 0.35);
+    cursor: pointer;
+
+    > #pipFrameThumb {
+        width: 100%;
+        height: auto;
+        display: block;
+    }
+}
+
+#pipFrameFullscreen {
+    position: fixed;
+    inset: 0;
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: rgba(0, 0, 0, 0.92);
+    cursor: pointer;
+
+    > #pipFrameFull {
+        max-width: 100vw;
+        max-height: 100vh;
+        width: auto;
+        height: auto;
+        object-fit: contain;
+        display: block;
+    }
+}
+
 /* loadingWrap */
 
 #loadingWrap {
@@ -667,4 +708,33 @@ button {
             border-radius: 6px 0 0 6px;
         }
     }
+}
+
+/* Make the logo fully click-through even inside #ui */
+#ui #logoOverlay,
+#ui #logoOverlay * {
+    pointer-events: none !important;
+}
+
+#logoOverlay {
+    position: fixed;
+    right: 20px;
+    top: 20px;
+    z-index: 1000;
+    pointer-events: none;
+}
+
+#logoOverlay img {
+    width: 60px;
+    height: auto;
+    opacity: 0.9;
+    filter:
+        drop-shadow(1px 0 0 black)
+        drop-shadow(-1px 0 0 black)
+        drop-shadow(0 1px 0 black)
+        drop-shadow(0 -1px 0 black)
+        drop-shadow(1px 1px 0 black)
+        drop-shadow(-1px 1px 0 black)
+        drop-shadow(1px -1px 0 black)
+        drop-shadow(-1px -1px 0 black);
 }

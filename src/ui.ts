@@ -224,6 +224,7 @@ const initUI = (global: Global) => {
     const docRoot = document.documentElement;
     const dom = [
         'ui',
+        'pipFrameWrap', 'pipFrameThumb', 'pipFrameFullscreen', 'pipFrameFull',
         'controlsWrap',
         'arMode', 'vrMode',
         'enterFullscreen', 'exitFullscreen',
@@ -252,6 +253,82 @@ const initUI = (global: Global) => {
         event.preventDefault();
         canvas.dispatchEvent(new WheelEvent(event.type, event));
     }, { passive: false });
+
+    const thumbImage = dom.pipFrameThumb as HTMLImageElement;
+    const fullImage = dom.pipFrameFull as HTMLImageElement;
+    let selectedFramePath: string | null = null;
+    let fullscreenOpen = false;
+    const isAnimationRunning = () => state.cameraMode === 'anim' && !state.animationPaused;
+
+    const toDerivedFramePath = (filePath: string, directory: 'images_jpg_8' | 'images_jpg') => {
+        const withDirectory = filePath.replace(/(^|\/)images\//i, `$1${directory}/`);
+        return withDirectory.replace(/\.[^./\\]+$/, '.jpg');
+    };
+
+    const closeFullscreenFrame = () => {
+        if (!fullscreenOpen) {
+            return;
+        }
+        fullscreenOpen = false;
+        dom.pipFrameFullscreen.classList.add('hidden');
+
+        // Explicitly release full-resolution image memory when closed.
+        fullImage.removeAttribute('src');
+    };
+
+    const updatePipVisibility = () => {
+        const shouldShow = !!selectedFramePath && !isAnimationRunning();
+        dom.pipFrameWrap.classList[shouldShow ? 'remove' : 'add']('hidden');
+        if (!shouldShow) {
+            closeFullscreenFrame();
+        }
+    };
+
+    const openFullscreenFrame = () => {
+        if (!selectedFramePath) {
+            return;
+        }
+        fullscreenOpen = true;
+        dom.pipFrameFullscreen.classList.remove('hidden');
+        fullImage.src = toDerivedFramePath(selectedFramePath, 'images_jpg');
+    };
+
+    const toggleFullscreenFrame = () => {
+        if (fullscreenOpen) {
+            closeFullscreenFrame();
+        } else {
+            openFullscreenFrame();
+        }
+    };
+
+    dom.pipFrameWrap.addEventListener('click', (event) => {
+        event.stopPropagation();
+        events.fire('inputEvent', 'gotoCurrentTransformFrame', event);
+        toggleFullscreenFrame();
+    });
+
+    dom.pipFrameFullscreen.addEventListener('click', () => {
+        closeFullscreenFrame();
+    });
+
+    events.on('transformFrame:selected', (selection) => {
+        const filePath = selection?.filePath as string | null;
+        if (!filePath) {
+            return;
+        }
+
+        selectedFramePath = filePath;
+        thumbImage.src = toDerivedFramePath(filePath, 'images_jpg_8');
+
+        if (fullscreenOpen) {
+            fullImage.src = toDerivedFramePath(filePath, 'images_jpg');
+        }
+
+        updatePipVisibility();
+    });
+
+    events.on('cameraMode:changed', updatePipVisibility);
+    events.on('animationPaused:changed', updatePipVisibility);
 
     // Handle loading progress updates
     events.on('progress:changed', (progress) => {
@@ -388,6 +465,8 @@ const initUI = (global: Global) => {
             if (state.isFullscreen) {
                 exitFullscreen();
             }
+
+            closeFullscreenFrame();
         } else if (event === 'interrupt') {
             dom.settingsPanel.classList.add('hidden');
         }

@@ -189,7 +189,18 @@ const initCanvas = (global: Global) => {
     apply();
 };
 
-const main = async (canvas: HTMLCanvasElement, settingsJson: any, config: Config) => {
+const main = async (
+    canvas: HTMLCanvasElement,
+    settingsJson: any,
+    geoXformOrConfig: any,
+    transformsOrConfig?: any,
+    maybeConfig?: Config
+) => {
+    const hasGeoData = maybeConfig !== undefined;
+    const config = (hasGeoData ? maybeConfig : geoXformOrConfig) as Config;
+    const geoXformJson = hasGeoData ? geoXformOrConfig : {};
+    const transformsJson = hasGeoData ? transformsOrConfig : { frames: [] };
+
     const { app, camera } = await createApp(canvas, config);
 
     // create events
@@ -215,6 +226,8 @@ const main = async (canvas: HTMLCanvasElement, settingsJson: any, config: Config
     const global: Global = {
         app,
         settings: importSettings(settingsJson),
+        geoXform: geoXformJson,
+        transforms: transformsJson,
         config,
         state,
         events,
@@ -274,6 +287,6 @@ const main = async (canvas: HTMLCanvasElement, settingsJson: any, config: Config
     return new Viewer(global, gsplatLoad, skyboxLoad);
 };
 
-console.log(`SuperSplat Viewer v${appVersion} | Engine v${engineVersion} (${engineRevision})`);
+console.log(`SuperSplat Viewer v${appVersion} | Engine v${engineVersion} (${engineRevision}) | GeoSwarm.ai Extensions r4`);
 
 export { main };

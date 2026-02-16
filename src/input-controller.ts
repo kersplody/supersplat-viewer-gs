@@ -208,12 +208,24 @@ class InputController {
             if (event.key === 'Escape') {
                 events.fire('inputEvent', 'cancel', event);
             } else if (!event.ctrlKey && !event.altKey && !event.metaKey) {
+                if (event.code === 'BracketLeft' || event.key === '[' || event.key === '{') {
+                    events.fire('inputEvent', 'prevTransformFrame', event);
+                    return;
+                }
+                if (event.code === 'BracketRight' || event.key === ']' || event.key === '}') {
+                    events.fire('inputEvent', 'nextTransformFrame', event);
+                    return;
+                }
                 switch (event.key) {
                     case 'f':
                         events.fire('inputEvent', 'frame', event);
                         break;
                     case 'r':
                         events.fire('inputEvent', 'reset', event);
+                        break;
+                    case 'p':
+                    case 'P':
+                        events.fire('inputEvent', 'gotoNearestTransformFrame', event);
                         break;
                     case ' ':
                         events.fire('inputEvent', 'playPause', event);

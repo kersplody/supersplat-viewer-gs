@@ -1,11 +1,10 @@
 /* eslint-disable no-unused-vars */
 interface Window {
     sse: {
-        poster?: HTMLImageElement,
+        config: object,
         settings: Promise<object>,
-        contentUrl: string,
-        contents: ArrayBuffer,
-        params: Record<string, string>
+        geoXform: Promise<object>,
+        transforms: Promise<object>
     }
 
     firstFrame?: () => void;

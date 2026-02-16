@@ -23,6 +23,7 @@ type ExperienceSettings = {
         startAnim: 'none' | 'orbit' | 'animTrack',
         animTrack: string
     },
+    xrheight?: number,
     background: {
         color?: number[]
     },

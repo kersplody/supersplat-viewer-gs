@@ -68,6 +68,7 @@ type ExperienceSettings = {
     tonemapping: 'none' | 'linear' | 'filmic' | 'hejl' | 'aces' | 'aces2' | 'neutral',
     highPrecisionRendering: boolean,
     soundUrl?: string,
+    xrheight?: number,
     background: {
         color: [number, number, number],
         skyboxUrl?: string
