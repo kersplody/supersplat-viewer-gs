@@ -283,6 +283,7 @@ const initUI = (global: Global) => {
     let mousePanBaseX = 0;
     let mousePanBaseY = 0;
     let mousePanDidMove = false;
+    let hasStoredPipView = false;
     const isAnimationRunning = () => state.cameraMode === 'anim' && !state.animationPaused;
 
     const toDerivedFramePath = (filePath: string, directory: 'images_jpg_8' | 'images_jpg') => {
@@ -326,10 +327,7 @@ const initUI = (global: Global) => {
         applyPipTransform();
     };
 
-    const resetPipZoomState = () => {
-        pipZoomScale = 1;
-        pipPanX = 0;
-        pipPanY = 0;
+    const resetPipInteractionState = () => {
         suppressCloseClickUntil = 0;
         mousePanPointerId = null;
         mousePanDidMove = false;
@@ -345,6 +343,13 @@ const initUI = (global: Global) => {
         gestureStartPanY = 0;
         gestureStartMidX = 0;
         gestureStartMidY = 0;
+    };
+
+    const resetStoredPipView = () => {
+        hasStoredPipView = false;
+        pipZoomScale = 1;
+        pipPanX = 0;
+        pipPanY = 0;
         applyPipTransform();
     };
 
@@ -354,7 +359,8 @@ const initUI = (global: Global) => {
         }
         fullscreenOpen = false;
         dom.pipFrameFullscreen.classList.add('hidden');
-        resetPipZoomState();
+        resetPipInteractionState();
+        hasStoredPipView = true;
         emitPipInspectState(false);
 
         // Explicitly release full-resolution image memory when closed.
@@ -375,7 +381,13 @@ const initUI = (global: Global) => {
         }
         fullscreenOpen = true;
         dom.pipFrameFullscreen.classList.remove('hidden');
-        resetPipZoomState();
+        resetPipInteractionState();
+        if (!hasStoredPipView) {
+            pipZoomScale = 1;
+            pipPanX = 0;
+            pipPanY = 0;
+        }
+        applyPipTransform();
         fullImage.src = toDerivedFramePath(selectedFramePath, 'images_jpg');
         emitPipInspectState(true);
     };
@@ -621,6 +633,11 @@ const initUI = (global: Global) => {
 
     events.on('cameraMode:changed', updatePipVisibility);
     events.on('animationPaused:changed', updatePipVisibility);
+    events.on('transformFrame:nearestUpdated', () => {
+        if (!fullscreenOpen) {
+            resetStoredPipView();
+        }
+    });
 
     // Handle loading progress updates
     events.on('progress:changed', (progress) => {

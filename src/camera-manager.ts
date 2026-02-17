@@ -524,7 +524,14 @@ class CameraManager {
                     wasMoving = false;
                     settledTime = 0;
                     if (!pipInspectActive) {
-                        pickNearestFrameForCurrentView();
+                        const previousIndex = transformFrameIndex;
+                        const nearestIndex = pickNearestFrameForCurrentView();
+                        if (nearestIndex >= 0 && nearestIndex !== previousIndex) {
+                            events.fire('transformFrame:nearestUpdated', {
+                                index: nearestIndex,
+                                count: preparedTransformFrames.length
+                            });
+                        }
                     }
                 }
             }
