@@ -262,9 +262,11 @@ const initUI = (global: Global) => {
     let pipPanX = 0;
     let pipPanY = 0;
     let suppressCloseClickUntil = 0;
+    let suppressOpenClickUntil = 0;
     const pipMinZoom = 1;
     const pipMaxZoom = 8;
     const pipCloseClickSuppressMs = 250;
+    const pipOpenClickSuppressMs = 300;
     const activeTouchPoints = new Map<number, { x: number; y: number }>();
     let gestureStartDistance: number | null = null;
     let gestureStartScale = 1;
@@ -305,6 +307,10 @@ const initUI = (global: Global) => {
 
     const suppressPipCloseClick = () => {
         suppressCloseClickUntil = performance.now() + pipCloseClickSuppressMs;
+    };
+
+    const suppressPipOpenClick = () => {
+        suppressOpenClickUntil = performance.now() + pipOpenClickSuppressMs;
     };
 
     const zoomPipAt = (clientX: number, clientY: number, nextScale: number) => {
@@ -359,6 +365,7 @@ const initUI = (global: Global) => {
         }
         fullscreenOpen = false;
         dom.pipFrameFullscreen.classList.add('hidden');
+        suppressPipOpenClick();
         resetPipInteractionState();
         hasStoredPipView = true;
         emitPipInspectState(false);
@@ -445,6 +452,11 @@ const initUI = (global: Global) => {
     };
 
     dom.pipFrameWrap.addEventListener('click', (event) => {
+        if (performance.now() < suppressOpenClickUntil) {
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
         event.stopPropagation();
         events.fire('inputEvent', 'gotoCurrentTransformFrame', event, { retainCameraMode: true });
         toggleFullscreenFrame();
@@ -613,6 +625,8 @@ const initUI = (global: Global) => {
             touchTapPointerId = null;
             touchTapIsCandidate = false;
             if (shouldCloseFromTap) {
+                event.preventDefault();
+                event.stopPropagation();
                 closeFullscreenFrame();
             }
         }
