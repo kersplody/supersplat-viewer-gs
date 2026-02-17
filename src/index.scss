@@ -195,6 +195,11 @@ button {
         left: 50%;
         transform: translateX(-50%);
         top: max(16px, env(safe-area-inset-top));
+        max-width: calc(100vw - max(32px, calc(env(safe-area-inset-left) + env(safe-area-inset-right) + 32px)));
+        white-space: normal;
+        overflow-wrap: anywhere;
+        text-align: center;
+        line-height: 1.2;
     }
 
     > #pipInspectBottom {
