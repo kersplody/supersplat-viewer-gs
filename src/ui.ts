@@ -450,6 +450,20 @@ const initUI = (global: Global) => {
         toggleFullscreenFrame();
     });
 
+    window.addEventListener('keydown', (event: KeyboardEvent) => {
+        if (event.ctrlKey || event.altKey || event.metaKey || event.repeat) {
+            return;
+        }
+        if (event.key === 'z' || event.key === 'Z') {
+            if (dom.pipFrameWrap.classList.contains('hidden') && !fullscreenOpen) {
+                return;
+            }
+            events.fire('inputEvent', 'gotoCurrentTransformFrame', event, { retainCameraMode: true });
+            toggleFullscreenFrame();
+            event.preventDefault();
+        }
+    });
+
     fullImage.addEventListener('load', () => {
         if (fullscreenOpen) {
             emitPipInspectState(true);
