@@ -153,9 +153,10 @@ class InputController {
 
         // Generate input events
         ['wheel', 'pointerdown', 'contextmenu', 'keydown'].forEach((eventName) => {
+            const options = eventName === 'wheel' ? { passive: true } : undefined;
             canvas.addEventListener(eventName, (event) => {
                 events.fire('inputEvent', 'interrupt', event);
-            });
+            }, options);
         });
 
         canvas.addEventListener('pointermove', (event) => {

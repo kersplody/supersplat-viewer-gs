@@ -250,9 +250,8 @@ const initUI = (global: Global) => {
     // instead of the page scrolling (e.g. annotation nav, tooltips, hotspots)
     const canvas = global.app.graphicsDevice.canvas as HTMLCanvasElement;
     dom.ui.addEventListener('wheel', (event: WheelEvent) => {
-        event.preventDefault();
         canvas.dispatchEvent(new WheelEvent(event.type, event));
-    }, { passive: false });
+    }, { passive: true });
 
     const thumbImage = dom.pipFrameThumb as HTMLImageElement;
     const fullImage = dom.pipFrameFull as HTMLImageElement;
@@ -486,11 +485,10 @@ const initUI = (global: Global) => {
         if (!fullscreenOpen) {
             return;
         }
-        event.preventDefault();
         event.stopPropagation();
         const zoomFactor = Math.exp(-event.deltaY * 0.0015);
         zoomPipAt(event.clientX, event.clientY, pipZoomScale * zoomFactor);
-    }, { passive: false });
+    }, { passive: true });
 
     dom.pipFrameFullscreen.addEventListener('pointerdown', (event: PointerEvent) => {
         if (!fullscreenOpen) {
