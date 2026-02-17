@@ -294,6 +294,7 @@ const initUI = (global: Global) => {
 
     const applyPipTransform = () => {
         fullImage.style.transform = `translate(${pipPanX}px, ${pipPanY}px) scale(${pipZoomScale})`;
+        emitPipInspectState(true);
     };
 
     const applyPipZoom = (nextScale: number) => {
@@ -354,6 +355,7 @@ const initUI = (global: Global) => {
         fullscreenOpen = false;
         dom.pipFrameFullscreen.classList.add('hidden');
         resetPipZoomState();
+        emitPipInspectState(false);
 
         // Explicitly release full-resolution image memory when closed.
         fullImage.removeAttribute('src');
@@ -375,7 +377,52 @@ const initUI = (global: Global) => {
         dom.pipFrameFullscreen.classList.remove('hidden');
         resetPipZoomState();
         fullImage.src = toDerivedFramePath(selectedFramePath, 'images_jpg');
+        emitPipInspectState(true);
     };
+
+    function emitPipInspectState(active: boolean) {
+        if (!active || !fullscreenOpen) {
+            events.fire('pipInspect:changed', { active: false });
+            return;
+        }
+
+        const naturalWidth = fullImage.naturalWidth;
+        const naturalHeight = fullImage.naturalHeight;
+        const rect = fullImage.getBoundingClientRect();
+        if (!(naturalWidth > 0 && naturalHeight > 0 && rect.width > 0 && rect.height > 0)) {
+            return;
+        }
+
+        const baseDisplayWidth = rect.width / pipZoomScale;
+        const baseDisplayHeight = rect.height / pipZoomScale;
+        if (!(baseDisplayWidth > 0 && baseDisplayHeight > 0)) {
+            return;
+        }
+
+        const viewportCenterX = window.innerWidth * 0.5;
+        const viewportCenterY = window.innerHeight * 0.5;
+        const transformedCenterX = rect.left + rect.width * 0.5;
+        const transformedCenterY = rect.top + rect.height * 0.5;
+        const centerOffsetX = viewportCenterX - transformedCenterX;
+        const centerOffsetY = viewportCenterY - transformedCenterY;
+        const pixelsPerImageX = baseDisplayWidth / naturalWidth;
+        const pixelsPerImageY = baseDisplayHeight / naturalHeight;
+        const centerU = naturalWidth * 0.5 + centerOffsetX / (pipZoomScale * pixelsPerImageX);
+        const centerV = naturalHeight * 0.5 + centerOffsetY / (pipZoomScale * pixelsPerImageY);
+
+        events.fire('pipInspect:changed', {
+            active: true,
+            zoom: pipZoomScale,
+            panX: pipPanX,
+            panY: pipPanY,
+            imageWidth: baseDisplayWidth,
+            imageHeight: baseDisplayHeight,
+            sourceWidth: naturalWidth,
+            sourceHeight: naturalHeight,
+            centerU,
+            centerV
+        });
+    }
 
     const toggleFullscreenFrame = () => {
         if (fullscreenOpen) {
@@ -389,6 +436,12 @@ const initUI = (global: Global) => {
         event.stopPropagation();
         events.fire('inputEvent', 'gotoCurrentTransformFrame', event, { retainCameraMode: true });
         toggleFullscreenFrame();
+    });
+
+    fullImage.addEventListener('load', () => {
+        if (fullscreenOpen) {
+            emitPipInspectState(true);
+        }
     });
 
     dom.pipFrameFullscreen.addEventListener('wheel', (event: WheelEvent) => {

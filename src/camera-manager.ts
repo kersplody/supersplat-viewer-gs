@@ -21,6 +21,10 @@ const tmpFrameForward = new Vec3();
 const tmpFrameTarget = new Vec3();
 const tmpCameraForward = new Vec3();
 const tmpQuat = new Quat();
+const tmpQuat2 = new Quat();
+const tmpPipDir = new Vec3();
+const tmpPipWorldDir = new Vec3();
+const tmpPipTarget = new Vec3();
 
 type TransformFrame = {
     file_path?: string;
@@ -35,6 +39,28 @@ type PreparedTransformFrame = {
     position: Vec3;
     forward: Vec3;
     fov: number;
+};
+
+type PipInspectState = {
+    active: boolean;
+    zoom?: number;
+    panX?: number;
+    panY?: number;
+    imageWidth?: number;
+    imageHeight?: number;
+    sourceWidth?: number;
+    sourceHeight?: number;
+    centerU?: number;
+    centerV?: number;
+};
+
+type CameraIntrinsics = {
+    width: number;
+    height: number;
+    fx: number;
+    fy: number;
+    cx: number;
+    cy: number;
 };
 
 const createCamera = (position: Vec3, target: Vec3, fov: number) => {
@@ -130,6 +156,34 @@ const extractTransformsFov = (transforms: any, fallbackFov: number) => {
     return fallbackFov;
 };
 
+const extractCameraIntrinsics = (transforms: any): CameraIntrinsics | null => {
+    const width = transforms?.w;
+    const height = transforms?.h;
+    if (!(typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0)) {
+        return null;
+    }
+
+    const fx = transforms?.fl_x;
+    const fy = transforms?.fl_y;
+    if (!(typeof fx === 'number' && fx > 0) && !(typeof fy === 'number' && fy > 0)) {
+        return null;
+    }
+
+    const resolvedFx = typeof fx === 'number' && fx > 0 ? fx : fy;
+    const resolvedFy = typeof fy === 'number' && fy > 0 ? fy : fx;
+    const cx = typeof transforms?.cx === 'number' ? transforms.cx : width * 0.5;
+    const cy = typeof transforms?.cy === 'number' ? transforms.cy : height * 0.5;
+
+    return {
+        width,
+        height,
+        fx: resolvedFx,
+        fy: resolvedFy,
+        cx,
+        cy
+    };
+};
+
 const cameraForwardFromAngles = (camera: Camera, out: Vec3) => {
     tmpQuat.setFromEulerAngles(camera.angles).transformVector(Vec3.FORWARD, out).normalize();
     return out;
@@ -179,23 +233,26 @@ class CameraManager {
 
         const transformFrames = (Array.isArray(transforms?.frames) ? transforms.frames : []) as TransformFrame[];
         const validTransformFrames = transformFrames
-            .filter((frame) => Array.isArray(frame?.transform_matrix))
-            .map((frame) => ({
-                ...frame,
-                sort_key: extractFrameSortKey(frame)
-            }))
-            .sort((a, b) => {
-                const byFrameNumber = a.sort_key - b.sort_key;
-                if (byFrameNumber !== 0) {
-                    return byFrameNumber;
-                }
-                return (a.file_path ?? '').localeCompare(b.file_path ?? '');
-            });
+        .filter(frame => Array.isArray(frame?.transform_matrix))
+        .map(frame => ({
+            ...frame,
+            sort_key: extractFrameSortKey(frame)
+        }))
+        .sort((a, b) => {
+            const byFrameNumber = a.sort_key - b.sort_key;
+            if (byFrameNumber !== 0) {
+                return byFrameNumber;
+            }
+            return (a.file_path ?? '').localeCompare(b.file_path ?? '');
+        });
         const sceneRotationDegrees = getSceneXformDegrees(geoXform);
-        const sceneRotation = sceneRotationDegrees
-            ? new Mat4().setFromEulerAngles(sceneRotationDegrees.x, sceneRotationDegrees.y, sceneRotationDegrees.z)
-            : null;
+        const sceneRotation = sceneRotationDegrees ? new Mat4().setFromEulerAngles(
+            sceneRotationDegrees.x,
+            sceneRotationDegrees.y,
+            sceneRotationDegrees.z
+        ) : null;
         const transformsFov = extractTransformsFov(transforms, camera0.fov);
+        const transformsIntrinsics = extractCameraIntrinsics(transforms);
         const preparedTransformFrames: PreparedTransformFrame[] = [];
         validTransformFrames.forEach((frame) => {
             const camera = frameToCamera(frame, transformsFov, sceneRotation);
@@ -211,6 +268,7 @@ class CameraManager {
             });
         });
         let transformFrameIndex = -1;
+        let pipInspectActive = false;
 
         const emitSelectedTransformFrame = () => {
             if (transformFrameIndex < 0 || transformFrameIndex >= preparedTransformFrames.length) {
@@ -339,6 +397,92 @@ class CameraManager {
             transitionTimer = 0;
         };
 
+        const applyPipInspectCamera = (inspectState: PipInspectState) => {
+            if (!inspectState.active || transformFrameIndex < 0 || transformFrameIndex >= preparedTransformFrames.length) {
+                return;
+            }
+
+            const zoom = Math.max(1e-3, inspectState.zoom ?? 1);
+            const panX = inspectState.panX ?? 0;
+            const panY = inspectState.panY ?? 0;
+            const imageWidth = inspectState.imageWidth ?? 0;
+            const imageHeight = inspectState.imageHeight ?? 0;
+            if (!(imageWidth > 0 && imageHeight > 0)) {
+                return;
+            }
+
+            const base = preparedTransformFrames[transformFrameIndex].camera;
+            const baseFovRad = base.fov * Math.PI / 180;
+            const halfTan = Math.tan(baseFovRad * 0.5);
+            const pipFov = 2 * Math.atan(halfTan / zoom) * 180 / Math.PI;
+
+            if (transformsIntrinsics) {
+                let centerU = inspectState.centerU;
+                let centerV = inspectState.centerV;
+
+                if (!(typeof centerU === 'number' && typeof centerV === 'number')) {
+                    const sourceWidth = inspectState.sourceWidth ?? transformsIntrinsics.width;
+                    const sourceHeight = inspectState.sourceHeight ?? transformsIntrinsics.height;
+                    const pixelsPerImageX = imageWidth / sourceWidth;
+                    const pixelsPerImageY = imageHeight / sourceHeight;
+                    centerU = sourceWidth * 0.5 - panX / (zoom * pixelsPerImageX);
+                    centerV = sourceHeight * 0.5 - panY / (zoom * pixelsPerImageY);
+                }
+
+                const sourceWidth = inspectState.sourceWidth ?? transformsIntrinsics.width;
+                const sourceHeight = inspectState.sourceHeight ?? transformsIntrinsics.height;
+                const uInIntrinsics = centerU * (transformsIntrinsics.width / sourceWidth);
+                const vInIntrinsics = centerV * (transformsIntrinsics.height / sourceHeight);
+
+                const dirX = (uInIntrinsics - transformsIntrinsics.cx) / transformsIntrinsics.fx;
+                const dirY = -(vInIntrinsics - transformsIntrinsics.cy) / transformsIntrinsics.fy;
+                tmpPipDir.set(dirX, dirY, -1).normalize();
+            } else {
+                const imageAspect = imageWidth / imageHeight;
+                const halfTanY = halfTan;
+                const halfTanX = halfTanY * imageAspect;
+                const normX = -2 * panX / (zoom * imageWidth);
+                const normY = -2 * panY / (zoom * imageHeight);
+                tmpPipDir.set(
+                    normX * halfTanX,
+                    -normY * halfTanY,
+                    -1
+                ).normalize();
+            }
+
+            tmpQuat2.setFromEulerAngles(base.angles).transformVector(tmpPipDir, tmpPipWorldDir).normalize();
+            tmpPipTarget.copy(base.position).add(tmpPipWorldDir);
+
+            const shouldUseFly = state.cameraMode === 'fly';
+
+            if (shouldUseFly) {
+                // Apply PiP pan as a look-direction update, but keep fly position user-driven.
+                tmpPipTarget.copy(this.camera.position).add(tmpPipWorldDir);
+                tmpCamera.look(this.camera.position, tmpPipTarget);
+                tmpCamera.fov = pipFov;
+                controllers.fly.goto(tmpCamera);
+
+                this.camera.copy(tmpCamera);
+                target.copy(tmpCamera);
+                from.copy(tmpCamera);
+                transitionTimer = 1;
+                return;
+            }
+
+            if (state.cameraMode === 'anim') {
+                state.cameraMode = 'orbit';
+            }
+
+            tmpCamera.look(base.position, tmpPipTarget);
+            tmpCamera.fov = pipFov;
+            controllers.orbit.goto(tmpCamera);
+
+            this.camera.copy(tmpCamera);
+            target.copy(tmpCamera);
+            from.copy(tmpCamera);
+            transitionTimer = 1;
+        };
+
         // application update
         this.update = (deltaTime: number, frame: CameraFrame) => {
 
@@ -379,7 +523,9 @@ class CameraManager {
                 if (settledTime >= settleDelaySeconds) {
                     wasMoving = false;
                     settledTime = 0;
-                    pickNearestFrameForCurrentView();
+                    if (!pipInspectActive) {
+                        pickNearestFrameForCurrentView();
+                    }
                 }
             }
 
@@ -497,6 +643,11 @@ class CameraManager {
             controllers.orbit.goto(tmpCamera);
             target.fov = tmpCamera.fov;
             startTransition();
+        });
+
+        events.on('pipInspect:changed', (inspectState: PipInspectState) => {
+            pipInspectActive = !!inspectState?.active;
+            applyPipInspectCamera(inspectState);
         });
     }
 }
