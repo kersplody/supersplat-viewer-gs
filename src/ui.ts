@@ -273,6 +273,10 @@ const initUI = (global: Global) => {
     let gestureStartMidX = 0;
     let gestureStartMidY = 0;
     let touchGestureDidMove = false;
+    let touchTapPointerId: number | null = null;
+    let touchTapStartX = 0;
+    let touchTapStartY = 0;
+    let touchTapIsCandidate = false;
     let mousePanPointerId: number | null = null;
     let mousePanStartX = 0;
     let mousePanStartY = 0;
@@ -329,6 +333,10 @@ const initUI = (global: Global) => {
         mousePanPointerId = null;
         mousePanDidMove = false;
         touchGestureDidMove = false;
+        touchTapPointerId = null;
+        touchTapStartX = 0;
+        touchTapStartY = 0;
+        touchTapIsCandidate = false;
         activeTouchPoints.clear();
         gestureStartDistance = null;
         gestureStartScale = 1;
@@ -416,6 +424,14 @@ const initUI = (global: Global) => {
         }
 
         activeTouchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (activeTouchPoints.size === 1) {
+            touchTapPointerId = event.pointerId;
+            touchTapStartX = event.clientX;
+            touchTapStartY = event.clientY;
+            touchTapIsCandidate = true;
+        } else {
+            touchTapIsCandidate = false;
+        }
         if (activeTouchPoints.size === 2) {
             const [a, b] = Array.from(activeTouchPoints.values());
             gestureStartDistance = Math.hypot(a.x - b.x, a.y - b.y);
@@ -454,6 +470,11 @@ const initUI = (global: Global) => {
         }
 
         activeTouchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (event.pointerId === touchTapPointerId && touchTapIsCandidate) {
+            if (Math.abs(event.clientX - touchTapStartX) > 6 || Math.abs(event.clientY - touchTapStartY) > 6) {
+                touchTapIsCandidate = false;
+            }
+        }
         if (activeTouchPoints.size < 2 || gestureStartDistance === null || gestureStartDistance <= 0) {
             return;
         }
@@ -502,6 +523,18 @@ const initUI = (global: Global) => {
             gestureStartPanY = pipPanY;
             if (touchGestureDidMove) {
                 suppressPipCloseClick();
+            }
+        }
+
+        if (event.pointerId === touchTapPointerId) {
+            const shouldCloseFromTap =
+                touchTapIsCandidate &&
+                activeTouchPoints.size === 0 &&
+                performance.now() >= suppressCloseClickUntil;
+            touchTapPointerId = null;
+            touchTapIsCandidate = false;
+            if (shouldCloseFromTap) {
+                closeFullscreenFrame();
             }
         }
     };
