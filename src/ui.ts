@@ -258,11 +258,85 @@ const initUI = (global: Global) => {
     const fullImage = dom.pipFrameFull as HTMLImageElement;
     let selectedFramePath: string | null = null;
     let fullscreenOpen = false;
+    let pipZoomScale = 1;
+    let pipPanX = 0;
+    let pipPanY = 0;
+    let suppressCloseClickUntil = 0;
+    const pipMinZoom = 1;
+    const pipMaxZoom = 8;
+    const pipCloseClickSuppressMs = 250;
+    const activeTouchPoints = new Map<number, { x: number; y: number }>();
+    let gestureStartDistance: number | null = null;
+    let gestureStartScale = 1;
+    let gestureStartPanX = 0;
+    let gestureStartPanY = 0;
+    let gestureStartMidX = 0;
+    let gestureStartMidY = 0;
+    let touchGestureDidMove = false;
+    let mousePanPointerId: number | null = null;
+    let mousePanStartX = 0;
+    let mousePanStartY = 0;
+    let mousePanBaseX = 0;
+    let mousePanBaseY = 0;
+    let mousePanDidMove = false;
     const isAnimationRunning = () => state.cameraMode === 'anim' && !state.animationPaused;
 
     const toDerivedFramePath = (filePath: string, directory: 'images_jpg_8' | 'images_jpg') => {
         const withDirectory = filePath.replace(/(^|\/)images\//i, `$1${directory}/`);
         return withDirectory.replace(/\.[^./\\]+$/, '.jpg');
+    };
+
+    const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
+
+    const applyPipTransform = () => {
+        fullImage.style.transform = `translate(${pipPanX}px, ${pipPanY}px) scale(${pipZoomScale})`;
+    };
+
+    const applyPipZoom = (nextScale: number) => {
+        pipZoomScale = clamp(nextScale, pipMinZoom, pipMaxZoom);
+        applyPipTransform();
+    };
+
+    const suppressPipCloseClick = () => {
+        suppressCloseClickUntil = performance.now() + pipCloseClickSuppressMs;
+    };
+
+    const zoomPipAt = (clientX: number, clientY: number, nextScale: number) => {
+        const clampedScale = clamp(nextScale, pipMinZoom, pipMaxZoom);
+        if (clampedScale === pipZoomScale) {
+            return;
+        }
+
+        const rect = fullImage.getBoundingClientRect();
+        const centerX = rect.left + rect.width * 0.5;
+        const centerY = rect.top + rect.height * 0.5;
+        const screenOffsetX = clientX - centerX;
+        const screenOffsetY = clientY - centerY;
+        const imageX = (screenOffsetX - pipPanX) / pipZoomScale;
+        const imageY = (screenOffsetY - pipPanY) / pipZoomScale;
+
+        pipPanX = screenOffsetX - imageX * clampedScale;
+        pipPanY = screenOffsetY - imageY * clampedScale;
+        pipZoomScale = clampedScale;
+        applyPipTransform();
+    };
+
+    const resetPipZoomState = () => {
+        pipZoomScale = 1;
+        pipPanX = 0;
+        pipPanY = 0;
+        suppressCloseClickUntil = 0;
+        mousePanPointerId = null;
+        mousePanDidMove = false;
+        touchGestureDidMove = false;
+        activeTouchPoints.clear();
+        gestureStartDistance = null;
+        gestureStartScale = 1;
+        gestureStartPanX = 0;
+        gestureStartPanY = 0;
+        gestureStartMidX = 0;
+        gestureStartMidY = 0;
+        applyPipTransform();
     };
 
     const closeFullscreenFrame = () => {
@@ -271,6 +345,7 @@ const initUI = (global: Global) => {
         }
         fullscreenOpen = false;
         dom.pipFrameFullscreen.classList.add('hidden');
+        resetPipZoomState();
 
         // Explicitly release full-resolution image memory when closed.
         fullImage.removeAttribute('src');
@@ -290,6 +365,7 @@ const initUI = (global: Global) => {
         }
         fullscreenOpen = true;
         dom.pipFrameFullscreen.classList.remove('hidden');
+        resetPipZoomState();
         fullImage.src = toDerivedFramePath(selectedFramePath, 'images_jpg');
     };
 
@@ -303,11 +379,141 @@ const initUI = (global: Global) => {
 
     dom.pipFrameWrap.addEventListener('click', (event) => {
         event.stopPropagation();
-        events.fire('inputEvent', 'gotoCurrentTransformFrame', event);
+        events.fire('inputEvent', 'gotoCurrentTransformFrame', event, { retainCameraMode: true });
         toggleFullscreenFrame();
     });
 
-    dom.pipFrameFullscreen.addEventListener('click', () => {
+    dom.pipFrameFullscreen.addEventListener('wheel', (event: WheelEvent) => {
+        if (!fullscreenOpen) {
+            return;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+        const zoomFactor = Math.exp(-event.deltaY * 0.0015);
+        zoomPipAt(event.clientX, event.clientY, pipZoomScale * zoomFactor);
+    }, { passive: false });
+
+    dom.pipFrameFullscreen.addEventListener('pointerdown', (event: PointerEvent) => {
+        if (!fullscreenOpen) {
+            return;
+        }
+
+        if (event.pointerType === 'mouse' && event.button === 0) {
+            mousePanPointerId = event.pointerId;
+            mousePanStartX = event.clientX;
+            mousePanStartY = event.clientY;
+            mousePanBaseX = pipPanX;
+            mousePanBaseY = pipPanY;
+            mousePanDidMove = false;
+            dom.pipFrameFullscreen.setPointerCapture(event.pointerId);
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+
+        if (event.pointerType !== 'touch') {
+            return;
+        }
+
+        activeTouchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (activeTouchPoints.size === 2) {
+            const [a, b] = Array.from(activeTouchPoints.values());
+            gestureStartDistance = Math.hypot(a.x - b.x, a.y - b.y);
+            gestureStartScale = pipZoomScale;
+            gestureStartPanX = pipPanX;
+            gestureStartPanY = pipPanY;
+            gestureStartMidX = (a.x + b.x) * 0.5;
+            gestureStartMidY = (a.y + b.y) * 0.5;
+            touchGestureDidMove = false;
+        }
+        event.preventDefault();
+        event.stopPropagation();
+    });
+
+    dom.pipFrameFullscreen.addEventListener('pointermove', (event: PointerEvent) => {
+        if (!fullscreenOpen) {
+            return;
+        }
+
+        if (event.pointerType === 'mouse' && event.pointerId === mousePanPointerId) {
+            const deltaX = event.clientX - mousePanStartX;
+            const deltaY = event.clientY - mousePanStartY;
+            if (Math.abs(deltaX) > 1 || Math.abs(deltaY) > 1) {
+                mousePanDidMove = true;
+            }
+            pipPanX = mousePanBaseX + deltaX;
+            pipPanY = mousePanBaseY + deltaY;
+            applyPipTransform();
+            event.preventDefault();
+            event.stopPropagation();
+            return;
+        }
+
+        if (event.pointerType !== 'touch' || !activeTouchPoints.has(event.pointerId)) {
+            return;
+        }
+
+        activeTouchPoints.set(event.pointerId, { x: event.clientX, y: event.clientY });
+        if (activeTouchPoints.size < 2 || gestureStartDistance === null || gestureStartDistance <= 0) {
+            return;
+        }
+
+        const [a, b] = Array.from(activeTouchPoints.values());
+        const currentDistance = Math.hypot(a.x - b.x, a.y - b.y);
+        if (currentDistance <= 0) {
+            return;
+        }
+
+        const currentMidX = (a.x + b.x) * 0.5;
+        const currentMidY = (a.y + b.y) * 0.5;
+        if (Math.abs(currentMidX - gestureStartMidX) > 1 ||
+            Math.abs(currentMidY - gestureStartMidY) > 1 ||
+            Math.abs(currentDistance - gestureStartDistance) > 1) {
+            touchGestureDidMove = true;
+        }
+        pipPanX = gestureStartPanX + (currentMidX - gestureStartMidX);
+        pipPanY = gestureStartPanY + (currentMidY - gestureStartMidY);
+        applyPipZoom(gestureStartScale * (currentDistance / gestureStartDistance));
+        event.preventDefault();
+        event.stopPropagation();
+    });
+
+    const releaseTouchPoint = (event: PointerEvent) => {
+        if (event.pointerType === 'mouse' && event.pointerId === mousePanPointerId) {
+            mousePanPointerId = null;
+            if (mousePanDidMove) {
+                suppressPipCloseClick();
+            }
+            if (dom.pipFrameFullscreen.hasPointerCapture(event.pointerId)) {
+                dom.pipFrameFullscreen.releasePointerCapture(event.pointerId);
+            }
+            return;
+        }
+
+        if (event.pointerType !== 'touch') {
+            return;
+        }
+
+        activeTouchPoints.delete(event.pointerId);
+        if (activeTouchPoints.size < 2) {
+            gestureStartDistance = null;
+            gestureStartScale = pipZoomScale;
+            gestureStartPanX = pipPanX;
+            gestureStartPanY = pipPanY;
+            if (touchGestureDidMove) {
+                suppressPipCloseClick();
+            }
+        }
+    };
+
+    dom.pipFrameFullscreen.addEventListener('pointerup', releaseTouchPoint);
+    dom.pipFrameFullscreen.addEventListener('pointercancel', releaseTouchPoint);
+
+    dom.pipFrameFullscreen.addEventListener('click', (event) => {
+        event.stopPropagation();
+        if (performance.now() < suppressCloseClickUntil) {
+            return;
+        }
         closeFullscreenFrame();
     });
 

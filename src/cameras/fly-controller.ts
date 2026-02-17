@@ -37,8 +37,11 @@ class FlyController implements CameraController {
 
     }
 
-    goto(pose: Pose) {
-        this.controller.attach(pose, true);
+    goto(camera: Camera) {
+        p.position.copy(camera.position);
+        p.angles.copy(camera.angles);
+        p.distance = camera.distance;
+        this.controller.attach(p, false);
     }
 }
 

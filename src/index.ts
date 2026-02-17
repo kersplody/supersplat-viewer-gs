@@ -287,6 +287,6 @@ const main = async (
     return new Viewer(global, gsplatLoad, skyboxLoad);
 };
 
-console.log(`SuperSplat Viewer v${appVersion} | Engine v${engineVersion} (${engineRevision}) | GeoSwarm.ai Extensions r4`);
+console.log(`SuperSplat Viewer v${appVersion} | Engine v${engineVersion} (${engineRevision}) | GeoSwarm.ai Extensions r6`);
 
 export { main };

@@ -266,7 +266,7 @@ class CameraManager {
             return bestIndex;
         };
 
-        const gotoTransformFrameIndex = (index: number, logPrefix: string) => {
+        const gotoTransformFrameIndex = (index: number, logPrefix: string, retainCameraMode = false) => {
             if (index < 0 || index >= preparedTransformFrames.length) {
                 return;
             }
@@ -274,8 +274,13 @@ class CameraManager {
             transformFrameIndex = index;
             const selected = preparedTransformFrames[transformFrameIndex];
 
-            state.cameraMode = 'orbit';
-            controllers.orbit.goto(selected.camera);
+            const shouldRetainFlyMode = retainCameraMode && state.cameraMode === 'fly';
+            state.cameraMode = shouldRetainFlyMode ? 'fly' : 'orbit';
+            if (shouldRetainFlyMode) {
+                controllers.fly.goto(selected.camera);
+            } else {
+                controllers.orbit.goto(selected.camera);
+            }
             emitSelectedTransformFrame();
 
             const frameName = selected.frame.file_path ?? `colmap_im_id:${selected.frame.colmap_im_id ?? 'unknown'}`;
@@ -384,7 +389,7 @@ class CameraManager {
         };
 
         // handle input events
-        events.on('inputEvent', (eventName, event) => {
+        events.on('inputEvent', (eventName, event, options?: { retainCameraMode?: boolean }) => {
             switch (eventName) {
                 case 'frame':
                     state.cameraMode = 'orbit';
@@ -427,7 +432,11 @@ class CameraManager {
                 }
                 case 'gotoCurrentTransformFrame':
                     if (transformFrameIndex >= 0) {
-                        gotoTransformFrameIndex(transformFrameIndex, '[transforms] camera -> selected frame');
+                        gotoTransformFrameIndex(
+                            transformFrameIndex,
+                            '[transforms] camera -> selected frame',
+                            !!options?.retainCameraMode
+                        );
                     }
                     break;
             }
