@@ -224,7 +224,8 @@ const initUI = (global: Global) => {
     const docRoot = document.documentElement;
     const dom = [
         'ui',
-        'pipFrameWrap', 'pipFrameThumb', 'pipFrameFullscreen', 'pipFrameFull',
+        'flightMetadataTop',
+        'pipFrameWrap', 'pipFrameThumb', 'pipFrameFullscreen', 'pipFrameFull', 'pipMetadataToggle', 'pipMetadataPanel',
         'controlsWrap',
         'arMode', 'vrMode',
         'enterFullscreen', 'exitFullscreen',
@@ -240,7 +241,7 @@ const initUI = (global: Global) => {
         'joystickBase', 'joystick',
         'tooltip',
         'annotationNav', 'annotationPrev', 'annotationNext', 'annotationInfo', 'annotationNavTitle',
-        'supersplatBranding'
+        'supersplatBranding', 'logoOverlay'
     ].reduce((acc: Record<string, HTMLElement>, id) => {
         acc[id] = document.getElementById(id);
         return acc;
@@ -255,6 +256,15 @@ const initUI = (global: Global) => {
 
     const thumbImage = dom.pipFrameThumb as HTMLImageElement;
     const fullImage = dom.pipFrameFull as HTMLImageElement;
+    const pipMetadataToggle = dom.pipMetadataToggle as HTMLButtonElement;
+    const pipMetadataPanel = dom.pipMetadataPanel;
+    const flightMetadataTop = dom.flightMetadataTop;
+    const imdatPhotos = (global.imdat && typeof global.imdat === 'object' && typeof global.imdat.photos === 'object')
+        ? global.imdat.photos as Record<string, Record<string, any>>
+        : null;
+    const imdatHeaderCommon = (global.imdat && typeof global.imdat === 'object' && typeof global.imdat.header?.common === 'object')
+        ? global.imdat.header.common as Record<string, any>
+        : null;
     let selectedFramePath: string | null = null;
     let fullscreenOpen = false;
     let pipZoomScale = 1;
@@ -262,6 +272,8 @@ const initUI = (global: Global) => {
     let pipPanY = 0;
     let suppressCloseClickUntil = 0;
     let suppressOpenClickUntil = 0;
+    let pipMetadataOpen = false;
+    let pipMetadataText = '';
     const pipMinZoom = 1;
     const pipMaxZoom = 8;
     const pipCloseClickSuppressMs = 250;
@@ -290,6 +302,179 @@ const initUI = (global: Global) => {
     const toDerivedFramePath = (filePath: string, directory: 'images_jpg_8' | 'images_jpg') => {
         const withDirectory = filePath.replace(/(^|\/)images\//i, `$1${directory}/`);
         return withDirectory.replace(/\.[^./\\]+$/, '.jpg');
+    };
+
+    const normalizeCaptureDateTime = (value: any) => {
+        if (typeof value !== 'string' || !value) {
+            return null;
+        }
+        return value.replace(/^(\d{4}):(\d{2}):(\d{2})\s/, '$1-$2-$3 ');
+    };
+
+    const pickFlightDateTime = () => {
+        const captureStart = imdatHeaderCommon?.['geoswarm:DateTimeCaptureStart'];
+        return normalizeCaptureDateTime(captureStart);
+    };
+
+    const updateFlightMetadataTop = () => {
+        if (!flightMetadataTop || !imdatHeaderCommon) {
+            flightMetadataTop?.classList.add('hidden');
+            return;
+        }
+
+        const flightId = imdatHeaderCommon['dc:identifier'];
+        const missionId = imdatHeaderCommon['geoswarm:missionId'];
+        const customer = imdatHeaderCommon['geoswarm:customer'];
+        const control = imdatHeaderCommon['geoswarm:control'];
+        const flightDateTime = pickFlightDateTime();
+
+        const line1Parts = [
+            flightId ? `FlightId: ${flightId}` : null,
+            missionId ? `MissionID: ${missionId}` : null
+        ].filter(Boolean);
+        const line2Parts = [
+            customer ? `Customer: ${customer}` : null,
+            control ? `Control: ${control}` : null,
+            flightDateTime ? `Flight: ${flightDateTime}` : null
+        ].filter(Boolean);
+
+        const lines = [line1Parts.join('  |  '), line2Parts.join('  |  ')].filter((line) => !!line);
+        if (lines.length === 0) {
+            flightMetadataTop.classList.add('hidden');
+            flightMetadataTop.textContent = '';
+            return;
+        }
+
+        flightMetadataTop.textContent = lines.join('\n');
+        flightMetadataTop.classList.remove('hidden');
+    };
+
+    const updateFlightMetadataTopLayout = () => {
+        if (!flightMetadataTop) {
+            return;
+        }
+
+        const edgePad = 16;
+        const gap = 12;
+        let leftBound = edgePad;
+        let rightBound = window.innerWidth - edgePad;
+
+        if (!dom.pipFrameWrap.classList.contains('hidden')) {
+            leftBound = Math.max(leftBound, dom.pipFrameWrap.getBoundingClientRect().right + gap);
+        }
+
+        const logoOverlay = dom.logoOverlay;
+        if (logoOverlay) {
+            rightBound = Math.min(rightBound, logoOverlay.getBoundingClientRect().left - gap);
+        }
+
+        if (rightBound - leftBound < 120) {
+            leftBound = edgePad;
+            rightBound = window.innerWidth - edgePad;
+        }
+
+        flightMetadataTop.style.left = `${Math.max(edgePad, leftBound)}px`;
+        flightMetadataTop.style.right = `${Math.max(edgePad, window.innerWidth - rightBound)}px`;
+    };
+
+    const toFrameMetadata = (selection: { filePath?: string | null; colmapImId?: number | null } | null | undefined) => {
+        if (!imdatPhotos || !selection?.filePath) {
+            return null;
+        }
+
+        const filePath = selection.filePath;
+        const baseName = filePath.split('/').pop() ?? filePath;
+        const stem = baseName.replace(/\.[^./\\]+$/, '');
+        const candidates = [
+            filePath,
+            filePath.replace(/^\.\//, ''),
+            baseName,
+            `${stem}.png`,
+            `${stem}.jpg`,
+            `${stem}.jpeg`,
+            String(selection.colmapImId ?? '')
+        ].filter(Boolean);
+
+        for (const key of candidates) {
+            const metadata = imdatPhotos[key];
+            if (metadata && typeof metadata === 'object') {
+                return metadata;
+            }
+        }
+
+        return null;
+    };
+
+    const renderMetadataValue = (value: any) => {
+        if (value === null || value === undefined) {
+            return '';
+        }
+        if (typeof value === 'number') {
+            return Number.isFinite(value) ? `${value}` : '';
+        }
+        if (typeof value === 'boolean') {
+            return value ? 'true' : 'false';
+        }
+        if (typeof value === 'string') {
+            return value;
+        }
+        return JSON.stringify(value);
+    };
+
+    const updatePipMetadataUiVisibility = () => {
+        const hasMetadata = !!pipMetadataText;
+        pipMetadataToggle.classList.toggle('hidden', !fullscreenOpen || !hasMetadata);
+        pipMetadataPanel.classList.toggle('hidden', !(fullscreenOpen && hasMetadata && pipMetadataOpen));
+        if (fullscreenOpen && hasMetadata && pipMetadataOpen) {
+            pipMetadataPanel.textContent = pipMetadataText;
+        } else if (!pipMetadataOpen) {
+            pipMetadataPanel.textContent = '';
+        }
+    };
+
+    const isPipMetadataInteractiveTarget = (target: EventTarget | null) => {
+        const node = target as Node | null;
+        if (!node) {
+            return false;
+        }
+        return pipMetadataToggle.contains(node) || pipMetadataPanel.contains(node);
+    };
+
+    const updatePipMetadataPanel = (selection: { filePath?: string | null; colmapImId?: number | null } | null | undefined) => {
+        if (!pipMetadataPanel) {
+            return;
+        }
+
+        const commonLines = Object.entries(imdatHeaderCommon ?? {})
+            .map(([key, value]) => {
+                const rendered = renderMetadataValue(value);
+                return rendered ? `${key}: ${rendered}` : null;
+            })
+            .filter((line): line is string => !!line);
+
+        const metadata = toFrameMetadata(selection);
+        const photoLines = Object.entries(metadata ?? {})
+            .map(([key, value]) => {
+                const rendered = renderMetadataValue(value);
+                return rendered ? `${key}: ${rendered}` : null;
+            })
+            .filter((line): line is string => !!line);
+
+        const sections: string[] = [];
+        if (commonLines.length > 0) {
+            sections.push(['Common', ...commonLines].join('\n'));
+        }
+        if (photoLines.length > 0) {
+            sections.push(['Photo', ...photoLines].join('\n'));
+        }
+
+        pipMetadataText = sections.join('\n\n');
+        if (!pipMetadataText) {
+            pipMetadataOpen = false;
+            updatePipMetadataUiVisibility();
+            return;
+        }
+        updatePipMetadataUiVisibility();
     };
 
     const clamp = (value: number, min: number, max: number) => Math.min(Math.max(value, min), max);
@@ -371,11 +556,17 @@ const initUI = (global: Global) => {
 
         // Explicitly release full-resolution image memory when closed.
         fullImage.removeAttribute('src');
+        if (flightMetadataTop?.textContent) {
+            flightMetadataTop.classList.remove('hidden');
+        }
+        pipMetadataOpen = false;
+        updatePipMetadataUiVisibility();
     };
 
     const updatePipVisibility = () => {
         const shouldShow = !!selectedFramePath && !isAnimationRunning();
         dom.pipFrameWrap.classList[shouldShow ? 'remove' : 'add']('hidden');
+        updateFlightMetadataTopLayout();
         if (!shouldShow) {
             closeFullscreenFrame();
         }
@@ -395,6 +586,9 @@ const initUI = (global: Global) => {
         }
         applyPipTransform();
         fullImage.src = toDerivedFramePath(selectedFramePath, 'images_jpg');
+        flightMetadataTop?.classList.add('hidden');
+        pipMetadataOpen = false;
+        updatePipMetadataUiVisibility();
         emitPipInspectState(true);
     };
 
@@ -492,6 +686,9 @@ const initUI = (global: Global) => {
 
     dom.pipFrameFullscreen.addEventListener('pointerdown', (event: PointerEvent) => {
         if (!fullscreenOpen) {
+            return;
+        }
+        if (isPipMetadataInteractiveTarget(event.target)) {
             return;
         }
 
@@ -634,6 +831,10 @@ const initUI = (global: Global) => {
     dom.pipFrameFullscreen.addEventListener('pointercancel', releaseTouchPoint);
 
     dom.pipFrameFullscreen.addEventListener('click', (event) => {
+        if (isPipMetadataInteractiveTarget(event.target)) {
+            event.stopPropagation();
+            return;
+        }
         event.stopPropagation();
         if (performance.now() < suppressCloseClickUntil) {
             return;
@@ -641,14 +842,41 @@ const initUI = (global: Global) => {
         closeFullscreenFrame();
     });
 
+    pipMetadataToggle.addEventListener('pointerdown', (event) => {
+        event.stopPropagation();
+    });
+    pipMetadataToggle.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        if (!pipMetadataText) {
+            return;
+        }
+        pipMetadataOpen = !pipMetadataOpen;
+        updatePipMetadataUiVisibility();
+    });
+
+    pipMetadataPanel.addEventListener('pointerdown', (event) => {
+        event.stopPropagation();
+    });
+    pipMetadataPanel.addEventListener('click', (event) => {
+        event.stopPropagation();
+    });
+    pipMetadataPanel.addEventListener('wheel', (event) => {
+        event.stopPropagation();
+    }, { passive: true });
+
     events.on('transformFrame:selected', (selection) => {
         const filePath = selection?.filePath as string | null;
         if (!filePath) {
+            pipMetadataText = '';
+            pipMetadataOpen = false;
+            updatePipMetadataUiVisibility();
             return;
         }
 
         selectedFramePath = filePath;
         thumbImage.src = toDerivedFramePath(filePath, 'images_jpg_8');
+        updatePipMetadataPanel(selection);
 
         if (fullscreenOpen) {
             fullImage.src = toDerivedFramePath(filePath, 'images_jpg');
@@ -998,6 +1226,10 @@ const initUI = (global: Global) => {
         (dom.supersplatBranding as HTMLAnchorElement).href = viewUrl.toString();
         dom.supersplatBranding.classList.remove('hidden');
     }
+
+    updateFlightMetadataTop();
+    updateFlightMetadataTopLayout();
+    window.addEventListener('resize', updateFlightMetadataTopLayout);
 };
 
 export { initPoster, initUI };

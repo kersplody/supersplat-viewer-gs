@@ -48,6 +48,7 @@ type Global = {
     settings: ExperienceSettings;
     geoXform: any;
     transforms: any;
+    imdat: any;
     config: Config;
     state: State;
     events: EventHandler;

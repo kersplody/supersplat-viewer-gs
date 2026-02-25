@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="en">
     <head>
-        <title>GeoSwarm.ai Viewer r19</title>
+        <title>GeoSwarm.ai Viewer r20</title>
         <meta charset="UTF-8">
         <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
         <base href="">
@@ -20,6 +20,7 @@
             const settingsUrl = url.searchParams.has('settings') ? url.searchParams.get('settings') : './settings.json';
             const geoXformUrl = url.searchParams.has('geo_xform') ? url.searchParams.get('geo_xform') : './geo_xform.json';
             const transformsUrl = url.searchParams.has('transforms') ? url.searchParams.get('transforms') : './transforms.json';
+            const imdatUrl = url.searchParams.has('imdat') ? url.searchParams.get('imdat') : './imdat.json';
             const hasContentOverride = url.searchParams.has('content');
             const contentOverrideUrl = hasContentOverride ? url.searchParams.get('content') : null;
 
@@ -88,7 +89,8 @@
                     config: sseConfig,
                     settings: fetch(settingsUrl).then(response => response.json()),
                     geoXform: fetchJsonOrDefault(geoXformUrl, {}),
-                    transforms: fetchJsonOrDefault(transformsUrl, { frames: [] })
+                    transforms: fetchJsonOrDefault(transformsUrl, { frames: [] }),
+                    imdat: fetchJsonOrDefault(imdatUrl, null)
                 };
 
                 return window.sse;
@@ -100,6 +102,7 @@
 
         <div id="ui">
             <div id="poster"></div>
+            <div id="flightMetadataTop" class="hidden"></div>
             <div id="pipFrameWrap" class="hidden">
                 <img id="pipFrameThumb" alt="Frame Thumbnail">
             </div>
@@ -107,6 +110,7 @@
                 <img id="pipFrameFull" alt="Frame Full Resolution">
                 <div id="pipInspectTop">PiP Inspect Mode • Mouse Wheel/Pinch Zoom; Left Click Drag/Two Finger Drag Pan; Tap/Click to Close</div>
                 <div id="pipInspectBottom">PiP Inspect Mode • Tap/Click to Close</div>
+                <button id="pipMetadataToggle" class="hidden" type="button" aria-label="Toggle image metadata">i</button>
                 <div id="pipMetadataPanel" class="hidden"></div>
             </div>
 
@@ -423,7 +427,7 @@
                 throw new Error('Viewer bootstrap failed');
             }
 
-            const { config, settings, geoXform, transforms } = sse;
+            const { config, settings, geoXform, transforms, imdat } = sse;
             const { poster } = config;
 
             // Show the poster image
@@ -472,14 +476,15 @@
                     return;
                 }
 
-                const [settingsJson, geoXformJson, transformsJson] = await Promise.all([
+                const [settingsJson, geoXformJson, transformsJson, imdatJson] = await Promise.all([
                     settings,
                     geoXform,
-                    transforms
+                    transforms,
+                    imdat
                 ]);
 
                 const canvas = document.getElementById('application-canvas');
-                const viewer = await main(canvas, settingsJson, geoXformJson, transformsJson, config);
+                const viewer = await main(canvas, settingsJson, geoXformJson, transformsJson, config, imdatJson);
             };
 
             if (document.readyState === 'loading') {
