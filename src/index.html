@@ -110,6 +110,18 @@
                 <img id="pipFrameFull" alt="Frame Full Resolution">
                 <div id="pipInspectTop">PiP Inspect Mode • Mouse Wheel/Pinch Zoom; Left Click Drag/Two Finger Drag Pan; Tap/Click to Close</div>
                 <div id="pipInspectBottom">PiP Inspect Mode • Tap/Click to Close</div>
+                <button id="pipPrevTransformFrame" class="hidden" type="button" aria-label="Previous frame">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+                        <g class='stroke'><use href="#chevronLeftIcon"/></g>
+                        <g class='fill'><use href="#chevronLeftIcon"/></g>
+                    </svg>
+                </button>
+                <button id="pipNextTransformFrame" class="hidden" type="button" aria-label="Next frame">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+                        <g class='stroke'><use href="#chevronRightIcon"/></g>
+                        <g class='fill'><use href="#chevronRightIcon"/></g>
+                    </svg>
+                </button>
                 <button id="pipMetadataToggle" class="hidden" type="button" aria-label="Toggle image metadata">i</button>
                 <div id="pipMetadataPanel" class="hidden"></div>
             </div>
@@ -190,6 +202,18 @@
                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">
                                 <g class='stroke'><use href="#infoIcon"/></g>
                                 <g class='fill'><use href="#infoIcon"/></g>
+                            </svg>
+                        </button>
+                        <button id="prevTransformFrame" class="controlButton hidden">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">
+                                <g class='stroke'><use href="#chevronLeftIcon"/></g>
+                                <g class='fill'><use href="#chevronLeftIcon"/></g>
+                            </svg>
+                        </button>
+                        <button id="nextTransformFrame" class="controlButton hidden">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">
+                                <g class='stroke'><use href="#chevronRightIcon"/></g>
+                                <g class='fill'><use href="#chevronRightIcon"/></g>
                             </svg>
                         </button>
                         <button id="settings" class="controlButton">

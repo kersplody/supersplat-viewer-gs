@@ -225,11 +225,11 @@ const initUI = (global: Global) => {
     const dom = [
         'ui',
         'flightMetadataTop',
-        'pipFrameWrap', 'pipFrameThumb', 'pipFrameFullscreen', 'pipFrameFull', 'pipMetadataToggle', 'pipMetadataPanel',
+        'pipFrameWrap', 'pipFrameThumb', 'pipFrameFullscreen', 'pipFrameFull', 'pipPrevTransformFrame', 'pipNextTransformFrame', 'pipMetadataToggle', 'pipMetadataPanel',
         'controlsWrap',
         'arMode', 'vrMode',
         'enterFullscreen', 'exitFullscreen',
-        'info', 'infoPanel', 'desktopTab', 'touchTab', 'desktopInfoPanel', 'touchInfoPanel',
+        'info', 'prevTransformFrame', 'nextTransformFrame', 'infoPanel', 'desktopTab', 'touchTab', 'desktopInfoPanel', 'touchInfoPanel',
         'timelineContainer', 'handle', 'time',
         'buttonContainer',
         'play', 'pause',
@@ -256,6 +256,8 @@ const initUI = (global: Global) => {
 
     const thumbImage = dom.pipFrameThumb as HTMLImageElement;
     const fullImage = dom.pipFrameFull as HTMLImageElement;
+    const pipPrevTransformFrame = dom.pipPrevTransformFrame as HTMLButtonElement;
+    const pipNextTransformFrame = dom.pipNextTransformFrame as HTMLButtonElement;
     const pipMetadataToggle = dom.pipMetadataToggle as HTMLButtonElement;
     const pipMetadataPanel = dom.pipMetadataPanel;
     const flightMetadataTop = dom.flightMetadataTop;
@@ -265,6 +267,7 @@ const initUI = (global: Global) => {
     const imdatHeaderCommon = (global.imdat && typeof global.imdat === 'object' && typeof global.imdat.header?.common === 'object')
         ? global.imdat.header.common as Record<string, any>
         : null;
+    const hasTransformFrames = Array.isArray(global.transforms?.frames) && global.transforms.frames.length > 0;
     let selectedFramePath: string | null = null;
     let fullscreenOpen = false;
     let pipZoomScale = 1;
@@ -424,6 +427,8 @@ const initUI = (global: Global) => {
     const updatePipMetadataUiVisibility = () => {
         const hasMetadata = !!pipMetadataText;
         pipMetadataToggle.classList.toggle('hidden', !fullscreenOpen || !hasMetadata);
+        pipPrevTransformFrame.classList.toggle('hidden', !hasTransformFrames || !fullscreenOpen || !selectedFramePath);
+        pipNextTransformFrame.classList.toggle('hidden', !hasTransformFrames || !fullscreenOpen || !selectedFramePath);
         pipMetadataPanel.classList.toggle('hidden', !(fullscreenOpen && hasMetadata && pipMetadataOpen));
         if (fullscreenOpen && hasMetadata && pipMetadataOpen) {
             pipMetadataPanel.textContent = pipMetadataText;
@@ -437,7 +442,10 @@ const initUI = (global: Global) => {
         if (!node) {
             return false;
         }
-        return pipMetadataToggle.contains(node) || pipMetadataPanel.contains(node);
+        return pipMetadataToggle.contains(node)
+            || pipPrevTransformFrame.contains(node)
+            || pipNextTransformFrame.contains(node)
+            || pipMetadataPanel.contains(node);
     };
 
     const updatePipMetadataPanel = (selection: { filePath?: string | null; colmapImId?: number | null } | null | undefined) => {
@@ -865,9 +873,28 @@ const initUI = (global: Global) => {
         event.stopPropagation();
     }, { passive: true });
 
+    pipPrevTransformFrame.addEventListener('pointerdown', (event) => {
+        event.stopPropagation();
+    });
+    pipPrevTransformFrame.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        events.fire('inputEvent', 'prevTransformFrame', event);
+    });
+
+    pipNextTransformFrame.addEventListener('pointerdown', (event) => {
+        event.stopPropagation();
+    });
+    pipNextTransformFrame.addEventListener('click', (event) => {
+        event.preventDefault();
+        event.stopPropagation();
+        events.fire('inputEvent', 'nextTransformFrame', event);
+    });
+
     events.on('transformFrame:selected', (selection) => {
         const filePath = selection?.filePath as string | null;
         if (!filePath) {
+            selectedFramePath = null;
             pipMetadataText = '';
             pipMetadataOpen = false;
             updatePipMetadataUiVisibility();
@@ -1181,6 +1208,23 @@ const initUI = (global: Global) => {
         events.fire('inputEvent', 'frame', event);
     });
 
+    dom.prevTransformFrame.classList.toggle('hidden', !hasTransformFrames);
+    dom.nextTransformFrame.classList.toggle('hidden', !hasTransformFrames);
+
+    dom.prevTransformFrame.addEventListener('click', (event) => {
+        if (!hasTransformFrames) {
+            return;
+        }
+        events.fire('inputEvent', 'prevTransformFrame', event);
+    });
+
+    dom.nextTransformFrame.addEventListener('click', (event) => {
+        if (!hasTransformFrames) {
+            return;
+        }
+        events.fire('inputEvent', 'nextTransformFrame', event);
+    });
+
     // Initialize touch joystick for fly mode
     initJoystick(dom, events, state);
 
@@ -1203,6 +1247,8 @@ const initUI = (global: Global) => {
     tooltip.register(dom.frame, 'Frame Scene', 'bottom');
     tooltip.register(dom.settings, 'Settings', 'top');
     tooltip.register(dom.info, 'Help', 'top');
+    tooltip.register(dom.prevTransformFrame, 'Previous Frame', 'top');
+    tooltip.register(dom.nextTransformFrame, 'Next Frame', 'top');
     tooltip.register(dom.arMode, 'Enter AR', 'top');
     tooltip.register(dom.vrMode, 'Enter VR', 'top');
     tooltip.register(dom.enterFullscreen, 'Fullscreen', 'top');

@@ -216,9 +216,10 @@ button {
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
     }
 
-    > #pipMetadataToggle {
+    > #pipMetadataToggle,
+    > #pipPrevTransformFrame,
+    > #pipNextTransformFrame {
         position: absolute;
-        right: max(16px, env(safe-area-inset-right));
         bottom: max(16px, env(safe-area-inset-bottom));
         width: 34px;
         height: 34px;
@@ -235,6 +236,32 @@ button {
         cursor: pointer;
         pointer-events: auto;
         text-shadow: 0 1px 2px rgba(0, 0, 0, 0.6);
+    }
+
+    > #pipMetadataToggle {
+        right: max(16px, env(safe-area-inset-right));
+    }
+
+    > #pipNextTransformFrame {
+        right: calc(max(16px, env(safe-area-inset-right)) + 42px);
+    }
+
+    > #pipPrevTransformFrame {
+        right: calc(max(16px, env(safe-area-inset-right)) + 84px);
+    }
+
+    > #pipPrevTransformFrame,
+    > #pipNextTransformFrame {
+        > svg > g {
+            &.stroke {
+                stroke: #fff;
+                opacity: 0.45;
+            }
+
+            &.fill {
+                fill: #fff;
+            }
+        }
     }
 
     > #pipInspectTop {
@@ -269,6 +296,30 @@ button {
         overflow: auto;
         overscroll-behavior: contain;
         touch-action: pan-y;
+    }
+}
+
+@media (max-width: 640px) {
+    #pipFrameFullscreen {
+        > #pipInspectTop {
+            left: max(16px, env(safe-area-inset-left));
+            right: calc(max(20px, env(safe-area-inset-right)) + 72px);
+            transform: none;
+            text-align: left;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            line-height: 1.2;
+        }
+
+        > #pipInspectBottom {
+            left: max(16px, env(safe-area-inset-left));
+            right: calc(max(16px, env(safe-area-inset-right)) + 126px);
+            transform: none;
+            text-align: left;
+            white-space: normal;
+            overflow-wrap: anywhere;
+            line-height: 1.2;
+        }
     }
 }
 

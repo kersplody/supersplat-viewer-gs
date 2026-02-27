@@ -317,7 +317,7 @@ class CameraManager {
             transformFrameIndex = bestIndex;
             const selected = preparedTransformFrames[bestIndex].frame;
             const frameName = selected.file_path ?? `colmap_im_id:${selected.colmap_im_id ?? 'unknown'}`;
-            console.log(`[transforms] nearest frame ${bestIndex + 1}/${preparedTransformFrames.length}: ${frameName}`);
+            //console.log(`[transforms] nearest frame ${bestIndex + 1}/${preparedTransformFrames.length}: ${frameName}`);
             if (emitSelection) {
                 emitSelectedTransformFrame();
             }
@@ -342,7 +342,7 @@ class CameraManager {
             emitSelectedTransformFrame();
 
             const frameName = selected.frame.file_path ?? `colmap_im_id:${selected.frame.colmap_im_id ?? 'unknown'}`;
-            console.log(`${logPrefix} ${transformFrameIndex + 1}/${preparedTransformFrames.length}: ${frameName}`);
+            //console.log(`${logPrefix} ${transformFrameIndex + 1}/${preparedTransformFrames.length}: ${frameName}`);
         };
 
         const stepTransformFrame = (step: 1 | -1) => {
