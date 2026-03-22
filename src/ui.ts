@@ -218,6 +218,51 @@ const initPoster = (events: EventHandler) => {
     events.on('progress:changed', blur);
 };
 
+const normalizeImdatCommon = (imdat: any): Record<string, any> | null => {
+    if (!imdat || typeof imdat !== 'object') {
+        return null;
+    }
+
+    if (typeof imdat.header?.common === 'object') {
+        return imdat.header.common as Record<string, any>;
+    }
+
+    const common: Record<string, any> = {};
+    const copyIfPresent = (targetKey: string, sourceKey: string) => {
+        const value = imdat[sourceKey];
+        if (value !== undefined && value !== null && value !== '') {
+            common[targetKey] = value;
+        }
+    };
+
+    copyIfPresent('dc:identifier', 'flightId');
+    copyIfPresent('geoswarm:missionId', 'missionId');
+    copyIfPresent('geoswarm:customer', 'customer');
+    copyIfPresent('geoswarm:control', 'control');
+    copyIfPresent('geoswarm:DateTimeCaptureStart', 'dateTimeCaptureStart');
+    copyIfPresent('geoswarm:DateTimeCaptureEnd', 'dateTimeCaptureEnd');
+    copyIfPresent('geoswarm:ellipsoid', 'ellipsoid');
+    copyIfPresent('geoswarm:crs', 'crs');
+
+    return Object.keys(common).length > 0 ? common : null;
+};
+
+const normalizeImdatPhotos = (imdat: any): Record<string, Record<string, any>> | null => {
+    if (!imdat || typeof imdat !== 'object') {
+        return null;
+    }
+
+    if (typeof imdat.photos === 'object' && imdat.photos) {
+        return imdat.photos as Record<string, Record<string, any>>;
+    }
+
+    if (typeof imdat.images === 'object' && imdat.images) {
+        return imdat.images as Record<string, Record<string, any>>;
+    }
+
+    return null;
+};
+
 const initUI = (global: Global) => {
     const { config, events, state } = global;
 
@@ -273,12 +318,8 @@ const initUI = (global: Global) => {
     const pipMetadataToggle = dom.pipMetadataToggle as HTMLButtonElement;
     const pipMetadataPanel = dom.pipMetadataPanel;
     const flightMetadataTop = dom.flightMetadataTop;
-    const imdatPhotos = (global.imdat && typeof global.imdat === 'object' && typeof global.imdat.photos === 'object')
-        ? global.imdat.photos as Record<string, Record<string, any>>
-        : null;
-    const imdatHeaderCommon = (global.imdat && typeof global.imdat === 'object' && typeof global.imdat.header?.common === 'object')
-        ? global.imdat.header.common as Record<string, any>
-        : null;
+    const imdatPhotos = normalizeImdatPhotos(global.imdat);
+    const imdatHeaderCommon = normalizeImdatCommon(global.imdat);
     const hasTransformFrames = Array.isArray(global.transforms?.frames) && global.transforms.frames.length > 0;
     let selectedFramePath: string | null = null;
     let fullscreenOpen = false;
@@ -353,7 +394,7 @@ const initUI = (global: Global) => {
             flightDateTime ? `Flight: ${flightDateTime}` : null
         ].filter(Boolean);
 
-        const lines = [line1Parts.join('  |  '), line2Parts.join('  |  ')].filter((line) => !!line);
+        const lines = [line1Parts.join('  |  '), line2Parts.join('  |  ')].filter(line => !!line);
         if (lines.length === 0) {
             flightMetadataTop.classList.add('hidden');
             flightMetadataTop.textContent = '';
@@ -407,6 +448,8 @@ const initUI = (global: Global) => {
             `${stem}.png`,
             `${stem}.jpg`,
             `${stem}.jpeg`,
+            `images/${baseName}`,
+            `orig_images/${baseName}`,
             String(selection.colmapImId ?? '')
         ].filter(Boolean);
 
@@ -454,10 +497,10 @@ const initUI = (global: Global) => {
         if (!node) {
             return false;
         }
-        return pipMetadataToggle.contains(node)
-            || pipPrevTransformFrame.contains(node)
-            || pipNextTransformFrame.contains(node)
-            || pipMetadataPanel.contains(node);
+        return pipMetadataToggle.contains(node) ||
+            pipPrevTransformFrame.contains(node) ||
+            pipNextTransformFrame.contains(node) ||
+            pipMetadataPanel.contains(node);
     };
 
     const updatePipMetadataPanel = (selection: { filePath?: string | null; colmapImId?: number | null } | null | undefined) => {
@@ -466,19 +509,19 @@ const initUI = (global: Global) => {
         }
 
         const commonLines = Object.entries(imdatHeaderCommon ?? {})
-            .map(([key, value]) => {
-                const rendered = renderMetadataValue(value);
-                return rendered ? `${key}: ${rendered}` : null;
-            })
-            .filter((line): line is string => !!line);
+        .map(([key, value]) => {
+            const rendered = renderMetadataValue(value);
+            return rendered ? `${key}: ${rendered}` : null;
+        })
+        .filter((line): line is string => !!line);
 
         const metadata = toFrameMetadata(selection);
         const photoLines = Object.entries(metadata ?? {})
-            .map(([key, value]) => {
-                const rendered = renderMetadataValue(value);
-                return rendered ? `${key}: ${rendered}` : null;
-            })
-            .filter((line): line is string => !!line);
+        .map(([key, value]) => {
+            const rendered = renderMetadataValue(value);
+            return rendered ? `${key}: ${rendered}` : null;
+        })
+        .filter((line): line is string => !!line);
 
         const sections: string[] = [];
         if (commonLines.length > 0) {
