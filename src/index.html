@@ -19,7 +19,6 @@
             const skyboxUrl = url.searchParams.get('skybox');
             const voxelUrl = url.searchParams.get('voxel');
             const settingsUrl = url.searchParams.has('settings') ? url.searchParams.get('settings') : './settings.json';
-            const geoXformUrl = url.searchParams.has('geo_xform') ? url.searchParams.get('geo_xform') : './geo_xform.json';
             const transformsUrl = url.searchParams.has('transforms') ? url.searchParams.get('transforms') : './transforms.json';
             const imdatUrl = url.searchParams.has('imdat') ? url.searchParams.get('imdat') : './imdat.json';
             const hasContentOverride = url.searchParams.has('content');
@@ -91,7 +90,6 @@
                 window.sse = {
                     config: sseConfig,
                     settings: fetch(settingsUrl).then(response => response.json()),
-                    geoXform: fetchJsonOrDefault(geoXformUrl, {}),
                     transforms: fetchJsonOrDefault(transformsUrl, { frames: [] }),
                     imdat: fetchJsonOrDefault(imdatUrl, null)
                 };
@@ -569,7 +567,7 @@
                 throw new Error('Viewer bootstrap failed');
             }
 
-            const { config, settings, geoXform, transforms, imdat } = sse;
+            const { config, settings, transforms, imdat } = sse;
             const { poster } = config;
 
             // Show the poster image
@@ -618,15 +616,14 @@
                     return;
                 }
 
-                const [settingsJson, geoXformJson, transformsJson, imdatJson] = await Promise.all([
+                const [settingsJson, transformsJson, imdatJson] = await Promise.all([
                     settings,
-                    geoXform,
                     transforms,
                     imdat
                 ]);
 
                 const canvas = document.getElementById('application-canvas');
-                const viewer = await main(canvas, settingsJson, geoXformJson, transformsJson, config, imdatJson);
+                const viewer = await main(canvas, settingsJson, transformsJson, config, imdatJson);
             };
 
             if (document.readyState === 'loading') {

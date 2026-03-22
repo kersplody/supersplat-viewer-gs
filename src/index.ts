@@ -190,28 +190,13 @@ const initCanvas = (global: Global) => {
     apply();
 };
 
-const isConfig = (value: any): value is Config => {
-    return !!value &&
-        typeof value === 'object' &&
-        typeof value.noui === 'boolean' &&
-        typeof value.noanim === 'boolean' &&
-        typeof value.nofx === 'boolean';
-};
-
 const main = async (
     canvas: HTMLCanvasElement,
     settingsJson: any,
-    geoXformOrConfig: any,
-    transformsOrConfig?: any,
-    maybeConfig?: Config,
-    maybeImdat?: any
+    transformsJson: any,
+    config: Config,
+    imdatJson?: any
 ) => {
-    const geoMode = isConfig(maybeConfig) || !isConfig(geoXformOrConfig);
-    const config = (geoMode ? maybeConfig : geoXformOrConfig) as Config;
-    const geoXformJson = geoMode ? (geoXformOrConfig ?? {}) : {};
-    const transformsJson = geoMode ? (transformsOrConfig ?? { frames: [] }) : { frames: [] };
-    const imdatJson = geoMode ? (maybeImdat ?? null) : (transformsOrConfig ?? null);
-
     const { app, camera } = await createApp(canvas, config);
 
     // create events
@@ -241,7 +226,6 @@ const main = async (
     const global: Global = {
         app,
         settings: importSettings(settingsJson),
-        geoXform: geoXformJson,
         transforms: transformsJson,
         imdat: imdatJson,
         config,

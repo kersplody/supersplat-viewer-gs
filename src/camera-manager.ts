@@ -1,6 +1,5 @@
 import {
     type BoundingBox,
-    Mat4,
     Quat,
     Vec3
 } from 'playcanvas';
@@ -84,31 +83,7 @@ const createFrameCamera = (bbox: BoundingBox, fov: number) => {
     );
 };
 
-const getSceneXformDegrees = (geoXform: any) => {
-    const direct = geoXform?.playcanvas_candidates?.scene_xyz_deg_x_plus_90;
-    if (direct && typeof direct.x === 'number' && typeof direct.y === 'number' && typeof direct.z === 'number') {
-        return direct;
-    }
-
-    const candidates = geoXform?.playcanvas_candidates;
-    if (candidates && typeof candidates === 'object') {
-        for (const candidate of Object.values(candidates as Record<string, any>)) {
-            const degrees = candidate?.scene_xyz_deg_x_plus_90;
-            if (degrees && typeof degrees.x === 'number' && typeof degrees.y === 'number' && typeof degrees.z === 'number') {
-                return degrees;
-            }
-        }
-    }
-
-    const legacy = geoXform?.playcanvas_scene_xyz_deg_x_plus_90;
-    if (legacy && typeof legacy.x === 'number' && typeof legacy.y === 'number' && typeof legacy.z === 'number') {
-        return legacy;
-    }
-
-    return null;
-};
-
-const frameToCamera = (frame: TransformFrame, fov: number, worldRotation: Mat4 | null) => {
+const frameToCamera = (frame: TransformFrame, fov: number) => {
     const m = frame.transform_matrix;
     if (!Array.isArray(m) || m.length < 3 ||
         !Array.isArray(m[0]) || m[0].length < 4 ||
@@ -120,11 +95,6 @@ const frameToCamera = (frame: TransformFrame, fov: number, worldRotation: Mat4 |
     // COLMAP/NeRF transform_matrix is camera-to-world. Camera forward is -Z (third column negated).
     tmpFramePosition.set(m[0][3], m[1][3], m[2][3]);
     tmpFrameForward.set(-m[0][2], -m[1][2], -m[2][2]).normalize();
-
-    if (worldRotation) {
-        worldRotation.transformPoint(tmpFramePosition, tmpFramePosition);
-        worldRotation.transformVector(tmpFrameForward, tmpFrameForward).normalize();
-    }
 
     const result = new Camera();
     tmpFrameTarget.copy(tmpFramePosition).add(tmpFrameForward);
@@ -200,7 +170,7 @@ class CameraManager {
     camera = new Camera();
 
     constructor(global: Global, bbox: BoundingBox, collider: VoxelCollider | null = null) {
-        const { events, settings, state, transforms, geoXform } = global;
+        const { events, settings, state, transforms } = global;
 
         const camera0 = settings.cameras[0]?.initial;
         const defaultFov = camera0?.fov ?? 75;
@@ -266,17 +236,11 @@ class CameraManager {
             }
             return (a.file_path ?? '').localeCompare(b.file_path ?? '');
         });
-        const sceneRotationDegrees = getSceneXformDegrees(geoXform);
-        const sceneRotation = sceneRotationDegrees ? new Mat4().setFromEulerAngles(
-            sceneRotationDegrees.x,
-            sceneRotationDegrees.y,
-            sceneRotationDegrees.z
-        ) : null;
         const transformsFov = extractTransformsFov(transforms, camera0.fov);
         const transformsIntrinsics = extractCameraIntrinsics(transforms);
         const preparedTransformFrames: PreparedTransformFrame[] = [];
         validTransformFrames.forEach((frame) => {
-            const camera = frameToCamera(frame, transformsFov, sceneRotation);
+            const camera = frameToCamera(frame, transformsFov);
             if (!camera) {
                 return;
             }

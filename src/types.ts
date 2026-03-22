@@ -52,7 +52,6 @@ type State = {
 type Global = {
     app: AppBase;
     settings: ExperienceSettings;
-    geoXform: any;
     transforms: any;
     imdat: any;
     config: Config;
