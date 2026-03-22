@@ -8,14 +8,14 @@ import { Global } from './types';
 const initJoystick = (
     dom: Record<string, HTMLElement>,
     events: EventHandler,
-    state: { cameraMode: string; inputMode: string }
+    state: { cameraMode: string; inputMode: string; gamingControls: boolean }
 ) => {
-    // Joystick dimensions (matches SCSS: base height=120, stick size=48)
-    const joystickHeight = 120;
-    const stickSize = 48;
-    const stickCenterY = (joystickHeight - stickSize) / 2; // 36px - top position when centered
-    const stickCenterX = (joystickHeight - stickSize) / 2; // 36px - left position when centered (for 2D mode)
-    const maxStickTravel = stickCenterY; // can travel 36px up or down from center
+    // Joystick dimensions (matches SCSS: base height=100, stick size=40)
+    const joystickHeight = 100;
+    const stickSize = 40;
+    const stickCenterY = (joystickHeight - stickSize) / 2; // 30px - top position when centered
+    const stickCenterX = (joystickHeight - stickSize) / 2; // 30px - left position when centered (for 2D mode)
+    const maxStickTravel = stickCenterY; // can travel 30px up or down from center
 
     // Fixed joystick position (bottom-left corner with safe area)
     const joystickFixedX = 70;
@@ -34,7 +34,7 @@ const initJoystick = (
 
     // Update joystick visibility based on camera mode and input mode
     const updateJoystickVisibility = () => {
-        if (state.cameraMode === 'fly' && state.inputMode === 'touch') {
+        if ((state.cameraMode === 'fly' || state.cameraMode === 'walk') && state.inputMode === 'touch' && state.gamingControls) {
             dom.joystickBase.classList.remove('hidden');
             dom.joystickBase.classList.toggle('mode-2d', joystickMode === '2d');
             dom.joystickBase.style.left = `${joystickFixedX}px`;
@@ -53,6 +53,7 @@ const initJoystick = (
 
     events.on('cameraMode:changed', updateJoystickVisibility);
     events.on('inputMode:changed', updateJoystickVisibility);
+    events.on('gamingControls:changed', updateJoystickVisibility);
     window.addEventListener('resize', updateJoystickVisibility);
 
     // Handle joystick touch input directly on the joystick element
@@ -234,11 +235,17 @@ const initUI = (global: Global) => {
         'buttonContainer',
         'play', 'pause',
         'settings', 'settingsPanel',
-        'orbitCamera', 'flyCamera',
-        'hqCheck', 'hqOption', 'lqCheck', 'lqOption',
+        'orbitCamera', 'flyCamera', 'fpsCamera',
+        'retinaDisplayRow', 'retinaDisplayCheck', 'retinaDisplayOption',
+        'gamingControlsDivider', 'gamingControlsRow', 'gamingControlsCheck', 'gamingControlsOption',
+        'desktopClickToWalk', 'desktopGamingControls',
+        'touchFlyClickToWalk', 'touchFlyGamingControls',
+        'touchClickToWalk', 'touchGamingControls',
+        'walkHint',
         'reset', 'frame',
         'loadingText', 'loadingBar',
         'joystickBase', 'joystick',
+        'showVoxels',
         'tooltip',
         'annotationNav', 'annotationPrev', 'annotationNext', 'annotationInfo', 'annotationNavTitle',
         'supersplatBranding', 'logoOverlay'
@@ -246,6 +253,11 @@ const initUI = (global: Global) => {
         acc[id] = document.getElementById(id);
         return acc;
     }, {});
+
+    // Remove focus from buttons after click so keyboard input isn't captured by the UI
+    dom.ui.addEventListener('click', () => {
+        (document.activeElement as HTMLElement)?.blur();
+    });
 
     // Forward wheel events from UI overlays to the canvas so the camera zooms
     // instead of the page scrolling (e.g. annotation nav, tooltips, hotspots)
@@ -983,22 +995,46 @@ const initUI = (global: Global) => {
         dom.exitFullscreen.classList[value ? 'remove' : 'add']('hidden');
     });
 
-    // HQ mode
-    dom.hqOption.addEventListener('click', () => {
-        state.hqMode = true;
-    });
-    dom.lqOption.addEventListener('click', () => {
-        state.hqMode = false;
+    // Retina display toggle
+    dom.retinaDisplayRow.addEventListener('click', () => {
+        state.retinaDisplay = !state.retinaDisplay;
     });
 
-    const updateHQ = () => {
-        dom.hqCheck.classList[state.hqMode ? 'add' : 'remove']('active');
-        dom.lqCheck.classList[state.hqMode ? 'remove' : 'add']('active');
+    const updateRetinaDisplay = () => {
+        dom.retinaDisplayCheck.classList.toggle('active', state.retinaDisplay);
+        localStorage.setItem('retinaDisplay', String(state.retinaDisplay));
     };
-    events.on('hqMode:changed', (value) => {
-        updateHQ();
+    events.on('retinaDisplay:changed', updateRetinaDisplay);
+    updateRetinaDisplay();
+
+    // Gaming mode toggle (settings row visible on mobile only)
+    dom.gamingControlsRow.addEventListener('click', () => {
+        state.gamingControls = !state.gamingControls;
     });
-    updateHQ();
+
+    const updateGamingSettingsVisibility = () => {
+        const isDesktop = state.inputMode === 'desktop';
+        dom.gamingControlsDivider.classList.toggle('hidden', isDesktop);
+        dom.gamingControlsRow.classList.toggle('hidden', isDesktop);
+    };
+    events.on('inputMode:changed', updateGamingSettingsVisibility);
+    updateGamingSettingsVisibility();
+
+    const updateGamingControls = () => {
+        dom.gamingControlsCheck.classList.toggle('active', state.gamingControls);
+        if (state.inputMode !== 'desktop') {
+            dom.desktopClickToWalk.classList.toggle('hidden', state.gamingControls);
+            dom.desktopGamingControls.classList.toggle('hidden', !state.gamingControls);
+        }
+        dom.touchFlyClickToWalk.classList.toggle('hidden', state.gamingControls);
+        dom.touchFlyGamingControls.classList.toggle('hidden', !state.gamingControls);
+        dom.touchClickToWalk.classList.toggle('hidden', state.gamingControls);
+        dom.touchGamingControls.classList.toggle('hidden', !state.gamingControls);
+        localStorage.setItem('gamingControls', String(state.gamingControls));
+    };
+
+    events.on('gamingControls:changed', updateGamingControls);
+    updateGamingControls();
 
     // AR/VR
     const arChanged = () => dom.arMode.classList[state.hasAR ? 'remove' : 'add']('hidden');
@@ -1036,17 +1072,21 @@ const initUI = (global: Global) => {
         updateInfoTab('touch');
     });
 
-    dom.info.addEventListener('click', () => {
+    const toggleHelp = () => {
         updateInfoTab(state.inputMode);
         dom.infoPanel.classList.toggle('hidden');
-    });
+    };
+
+    dom.info.addEventListener('click', toggleHelp);
 
     dom.infoPanel.addEventListener('pointerdown', () => {
         dom.infoPanel.classList.add('hidden');
     });
 
     events.on('inputEvent', (event) => {
-        if (event === 'cancel') {
+        if (event === 'toggleHelp') {
+            toggleHelp();
+        } else if (event === 'cancel') {
             // close info panel on cancel
             dom.infoPanel.classList.add('hidden');
             dom.settingsPanel.classList.add('hidden');
@@ -1064,7 +1104,8 @@ const initUI = (global: Global) => {
 
     // fade ui controls after 5 seconds of inactivity
     events.on('controlsHidden:changed', (value) => {
-        dom.controlsWrap.className = value ? 'faded-out' : 'faded-in';
+        dom.controlsWrap.classList.toggle('faded-out', value);
+        dom.controlsWrap.classList.toggle('faded-in', !value);
     });
 
     // show the ui and start a timer to hide it again
@@ -1183,9 +1224,62 @@ const initUI = (global: Global) => {
     });
 
     // Camera mode UI
-    events.on('cameraMode:changed', () => {
-        dom.orbitCamera.classList[state.cameraMode === 'orbit' ? 'add' : 'remove']('active');
-        dom.flyCamera.classList[state.cameraMode === 'fly' ? 'add' : 'remove']('active');
+    const updateCameraModeUI = () => {
+        dom.orbitCamera.classList.toggle('active', state.cameraMode === 'orbit');
+        dom.flyCamera.classList.toggle('active', state.cameraMode === 'fly');
+        dom.fpsCamera.classList.toggle('active', state.cameraMode === 'walk');
+    };
+
+    events.on('cameraMode:changed', updateCameraModeUI);
+
+    // Walk mode hint banner (shown once per session on first FPS entry)
+    let walkHintShown = false;
+
+    const getWalkHintText = () => {
+        if (state.inputMode === 'desktop') {
+            return 'Click to walk. WASD to move freely.';
+        }
+        return state.gamingControls ?
+            'Use the joystick to move. Drag to look around. Tap to jump.' :
+            'Tap to walk. Drag to look around.';
+    };
+
+    events.on('cameraMode:changed', (value: string) => {
+        if (value === 'walk' && !walkHintShown) {
+            walkHintShown = true;
+            dom.walkHint.textContent = getWalkHintText();
+            dom.walkHint.classList.remove('hidden');
+        } else if (value !== 'walk') {
+            dom.walkHint.classList.add('hidden');
+        }
+    });
+
+    const dismissWalkHint = () => dom.walkHint.classList.add('hidden');
+
+    dom.walkHint.addEventListener('click', dismissWalkHint);
+    events.on('inputEvent', (type: string) => {
+        if (type === 'interrupt') dismissWalkHint();
+    });
+
+    // show/hide the FPS button based on voxel data availability
+    events.on('hasCollision:changed', (value: boolean) => {
+        dom.fpsCamera.classList.toggle('hidden', !value);
+        // adjust fly button shape: middle when FPS is visible, right when hidden
+        dom.flyCamera.classList.toggle('middle', value);
+        dom.flyCamera.classList.toggle('right', !value);
+    });
+
+    // Voxel overlay toggle (only visible when overlay is available)
+    events.on('hasVoxelOverlay:changed', (value: boolean) => {
+        dom.showVoxels.classList.toggle('hidden', !value);
+    });
+
+    dom.showVoxels.addEventListener('click', () => {
+        state.voxelOverlayEnabled = !state.voxelOverlayEnabled;
+    });
+
+    events.on('voxelOverlayEnabled:changed', (value: boolean) => {
+        dom.showVoxels.classList.toggle('active', value);
     });
 
     dom.settings.addEventListener('click', () => {
@@ -1198,6 +1292,10 @@ const initUI = (global: Global) => {
 
     dom.flyCamera.addEventListener('click', () => {
         state.cameraMode = 'fly';
+    });
+
+    dom.fpsCamera.addEventListener('click', () => {
+        events.fire('inputEvent', 'toggleWalk');
     });
 
     dom.reset.addEventListener('click', (event) => {
@@ -1243,8 +1341,10 @@ const initUI = (global: Global) => {
     tooltip.register(dom.pause, 'Pause', 'top');
     tooltip.register(dom.orbitCamera, 'Orbit Camera', 'top');
     tooltip.register(dom.flyCamera, 'Fly Camera', 'top');
+    tooltip.register(dom.fpsCamera, 'Walk Mode', 'top');
     tooltip.register(dom.reset, 'Reset Camera', 'bottom');
     tooltip.register(dom.frame, 'Frame Scene', 'bottom');
+    tooltip.register(dom.showVoxels, 'Show Voxels', 'top');
     tooltip.register(dom.settings, 'Settings', 'top');
     tooltip.register(dom.info, 'Help', 'top');
     tooltip.register(dom.prevTransformFrame, 'Previous Frame', 'top');

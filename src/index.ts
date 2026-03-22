@@ -20,6 +20,7 @@ import { importSettings } from './settings';
 import type { Config, Global } from './types';
 import { initPoster, initUI } from './ui';
 import { Viewer } from './viewer';
+import { VoxelCollider } from './voxel-collider';
 import { initXr } from './xr';
 import { version as appVersion } from '../package.json';
 
@@ -157,7 +158,7 @@ const initCanvas = (global: Global) => {
         // and resetting canvas dimensions can invalidate the XRWebGLLayer
         if (app.xr?.active) return;
 
-        const s = state.hqMode ? 1.0 : 0.5;
+        const s = state.retinaDisplay ? 1.0 : 0.5;
         const w = Math.ceil(deviceSize.width * s);
         const h = Math.ceil(deviceSize.height * s);
         if (w !== canvas.width || h !== canvas.height) {
@@ -175,7 +176,7 @@ const initCanvas = (global: Global) => {
     });
     resizeObserver.observe(canvas);
 
-    events.on('hqMode:changed', () => {
+    events.on('retinaDisplay:changed', () => {
         app.renderNextFrame = true;
     });
 
@@ -219,7 +220,7 @@ const main = async (
     const state = observe(events, {
         loaded: false,
         readyToRender: false,
-        hqMode: true,
+        retinaDisplay: platform.mobile ? localStorage.getItem('retinaDisplay') === 'true' : localStorage.getItem('retinaDisplay') !== 'false',
         progress: 0,
         inputMode: platform.mobile ? 'touch' : 'desktop',
         cameraMode: 'orbit',
@@ -229,8 +230,12 @@ const main = async (
         animationPaused: true,
         hasAR: false,
         hasVR: false,
+        hasCollision: false,
+        hasVoxelOverlay: false,
+        voxelOverlayEnabled: false,
         isFullscreen: false,
-        controlsHidden: false
+        controlsHidden: false,
+        gamingControls: localStorage.getItem('gamingControls') === 'true'
     });
 
     const global: Global = {
@@ -280,6 +285,13 @@ const main = async (
             app.scene.envAtlas = asset.resource as Texture;
         });
 
+    // Load voxel collision data
+    const voxelLoad = config.voxelUrl &&
+        VoxelCollider.load(config.voxelUrl).catch((err: Error): null => {
+            console.warn('Failed to load voxel data:', err);
+            return null;
+        });
+
     // Load and play sound
     if (global.settings.soundUrl) {
         const sound = new Audio(global.settings.soundUrl);
@@ -295,7 +307,7 @@ const main = async (
     }
 
     // Create the viewer
-    return new Viewer(global, gsplatLoad, skyboxLoad);
+    return new Viewer(global, gsplatLoad, skyboxLoad, voxelLoad);
 };
 
 console.log(`SuperSplat Viewer v${appVersion} | Engine v${engineVersion} (${engineRevision}) | GeoSwarm.ai Extensions r6`);
