@@ -44,6 +44,7 @@ type State = {
     hasCollision: boolean;
     hasVoxelOverlay: boolean;
     voxelOverlayEnabled: boolean;
+    annotationsVisible: boolean;
     isFullscreen: boolean;
     controlsHidden: boolean;
     gamingControls: boolean;

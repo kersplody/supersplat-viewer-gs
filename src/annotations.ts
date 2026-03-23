@@ -16,13 +16,20 @@ class Annotations {
         Annotation.parentDom = parentDom;
         document.querySelector('#ui').appendChild(parentDom);
 
-        global.events.on('controlsHidden:changed', (value) => {
-            parentDom.style.display = value ? 'none' : 'block';
-            Annotation.opacity = value ? 0.0 : 1.0;
+        const updateVisibility = () => {
+            const visible = !global.state.controlsHidden && global.state.annotationsVisible;
+            parentDom.style.display = visible ? 'block' : 'none';
+            Annotation.opacity = visible ? 1.0 : 0.0;
             if (this.annotations.length > 0) {
+                if (!global.state.annotationsVisible) {
+                    Annotation.activeAnnotation?.hideTooltip();
+                }
                 global.app.renderNextFrame = true;
             }
-        });
+        };
+
+        global.events.on('controlsHidden:changed', updateVisibility);
+        global.events.on('annotationsVisible:changed', updateVisibility);
 
         this.annotations = global.settings.annotations;
         this.parentDom = parentDom;
@@ -75,6 +82,8 @@ class Annotations {
                 script.showTooltip();
             }
         });
+
+        updateVisibility();
     }
 }
 

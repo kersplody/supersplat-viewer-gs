@@ -140,7 +140,7 @@ const initJoystick = (
 const initAnnotationNav = (
     dom: Record<string, HTMLElement>,
     events: EventHandler,
-    state: { loaded: boolean; inputMode: string; controlsHidden: boolean },
+    state: { loaded: boolean; inputMode: string; controlsHidden: boolean; annotationsVisible: boolean },
     annotations: Annotation[]
 ) => {
     // Only show navigator when there are at least 2 annotations
@@ -160,8 +160,9 @@ const initAnnotationNav = (
 
     const updateFade = () => {
         if (!state.loaded) return;
-        dom.annotationNav.classList.toggle('faded-in', !state.controlsHidden);
-        dom.annotationNav.classList.toggle('faded-out', state.controlsHidden);
+        const hidden = state.controlsHidden || !state.annotationsVisible;
+        dom.annotationNav.classList.toggle('faded-in', !hidden);
+        dom.annotationNav.classList.toggle('faded-out', hidden);
     };
 
     const goTo = (index: number) => {
@@ -183,6 +184,7 @@ const initAnnotationNav = (
 
     // Sync when an annotation is activated externally (e.g. hotspot click)
     events.on('annotation.activate', (annotation: Annotation) => {
+        if (!state.annotationsVisible) return;
         const idx = annotations.indexOf(annotation);
         if (idx !== -1) {
             currentIndex = idx;
@@ -197,6 +199,7 @@ const initAnnotationNav = (
     });
     events.on('inputMode:changed', updateMode);
     events.on('controlsHidden:changed', updateFade);
+    events.on('annotationsVisible:changed', updateFade);
 
     // Initial state
     updateDisplay();
@@ -290,7 +293,7 @@ const initUI = (global: Global) => {
         'reset', 'frame',
         'loadingText', 'loadingBar',
         'joystickBase', 'joystick',
-        'showVoxels',
+        'showVoxels', 'showAnnotations',
         'tooltip',
         'annotationNav', 'annotationPrev', 'annotationNext', 'annotationInfo', 'annotationNavTitle',
         'supersplatBranding', 'logoOverlay'
@@ -735,7 +738,9 @@ const initUI = (global: Global) => {
             return;
         }
         event.stopPropagation();
-        events.fire('inputEvent', 'gotoCurrentTransformFrame', event, { retainCameraMode: true });
+        if (!fullscreenOpen) {
+            events.fire('inputEvent', 'gotoCurrentTransformFrame', event);
+        }
         toggleFullscreenFrame();
     });
 
@@ -747,7 +752,9 @@ const initUI = (global: Global) => {
             if (dom.pipFrameWrap.classList.contains('hidden') && !fullscreenOpen) {
                 return;
             }
-            events.fire('inputEvent', 'gotoCurrentTransformFrame', event, { retainCameraMode: true });
+            if (!fullscreenOpen) {
+                events.fire('inputEvent', 'gotoCurrentTransformFrame', event);
+            }
             toggleFullscreenFrame();
             event.preventDefault();
         }
@@ -1348,6 +1355,22 @@ const initUI = (global: Global) => {
     events.on('voxelOverlayEnabled:changed', (value: boolean) => {
         dom.showVoxels.classList.toggle('active', value);
     });
+
+    const showAnnotationsButton = dom.showAnnotations as HTMLButtonElement | null;
+    if (showAnnotationsButton) {
+        const hasAnnotations = global.settings.annotations.length > 0;
+        showAnnotationsButton.classList.toggle('hidden', !hasAnnotations);
+
+        showAnnotationsButton.addEventListener('click', () => {
+            state.annotationsVisible = !state.annotationsVisible;
+        });
+
+        events.on('annotationsVisible:changed', (value: boolean) => {
+            showAnnotationsButton.classList.toggle('active', value);
+        });
+
+        showAnnotationsButton.classList.toggle('active', state.annotationsVisible);
+    }
 
     dom.settings.addEventListener('click', () => {
         dom.settingsPanel.classList.toggle('hidden');

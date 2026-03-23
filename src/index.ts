@@ -218,6 +218,7 @@ const main = async (
         hasCollision: false,
         hasVoxelOverlay: false,
         voxelOverlayEnabled: false,
+        annotationsVisible: true,
         isFullscreen: false,
         controlsHidden: false,
         gamingControls: localStorage.getItem('gamingControls') === 'true'
@@ -294,6 +295,6 @@ const main = async (
     return new Viewer(global, gsplatLoad, skyboxLoad, voxelLoad);
 };
 
-console.log(`SuperSplat Viewer v${appVersion} | Engine v${engineVersion} (${engineRevision}) | GeoSwarm.ai Extensions r6`);
+console.log(`SuperSplat Viewer v${appVersion} | Engine v${engineVersion} (${engineRevision}) | GeoSwarm.ai Extensions r8`);
 
 export { main };

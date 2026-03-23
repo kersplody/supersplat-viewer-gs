@@ -291,6 +291,7 @@ class CameraManager {
         });
         let transformFrameIndex = -1;
         let pipInspectActive = false;
+        let latestPipInspectState: PipInspectState = { active: false };
 
         const emitSelectedTransformFrame = () => {
             if (transformFrameIndex < 0 || transformFrameIndex >= preparedTransformFrames.length) {
@@ -479,9 +480,8 @@ class CameraManager {
             const shouldUseFly = state.cameraMode === 'fly';
 
             if (shouldUseFly) {
-                // Apply PiP pan as a look-direction update, but keep fly position user-driven.
-                tmpPipTarget.copy(this.camera.position).add(tmpPipWorldDir);
-                tmpCamera.look(this.camera.position, tmpPipTarget);
+                // Match the selected frame pose while preserving fly mode controls.
+                tmpCamera.look(base.position, tmpPipTarget);
                 tmpCamera.fov = pipFov;
                 controllers.fly.goto(tmpCamera);
 
@@ -522,6 +522,10 @@ class CameraManager {
             }
 
             controller.update(dt, frame, target);
+
+            if (pipInspectActive && latestPipInspectState.active) {
+                applyPipInspectCamera(latestPipInspectState);
+            }
 
             if (transitionTimer < 1) {
                 // lerp away from previous camera during transition
@@ -705,6 +709,7 @@ class CameraManager {
         });
 
         events.on('pipInspect:changed', (inspectState: PipInspectState) => {
+            latestPipInspectState = inspectState ?? { active: false };
             pipInspectActive = !!inspectState?.active;
             applyPipInspectCamera(inspectState);
         });
