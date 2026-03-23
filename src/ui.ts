@@ -607,6 +607,44 @@ const initUI = (global: Global) => {
         applyPipTransform();
     };
 
+    const getPipInspectState = () => {
+        const naturalWidth = fullImage.naturalWidth;
+        const naturalHeight = fullImage.naturalHeight;
+        const rect = fullImage.getBoundingClientRect();
+        if (!(naturalWidth > 0 && naturalHeight > 0 && rect.width > 0 && rect.height > 0)) {
+            return null;
+        }
+
+        const baseDisplayWidth = rect.width / pipZoomScale;
+        const baseDisplayHeight = rect.height / pipZoomScale;
+        if (!(baseDisplayWidth > 0 && baseDisplayHeight > 0)) {
+            return null;
+        }
+
+        const viewportCenterX = window.innerWidth * 0.5;
+        const viewportCenterY = window.innerHeight * 0.5;
+        const transformedCenterX = rect.left + rect.width * 0.5;
+        const transformedCenterY = rect.top + rect.height * 0.5;
+        const centerOffsetX = viewportCenterX - transformedCenterX;
+        const centerOffsetY = viewportCenterY - transformedCenterY;
+        const pixelsPerImageX = baseDisplayWidth / naturalWidth;
+        const pixelsPerImageY = baseDisplayHeight / naturalHeight;
+        const centerU = naturalWidth * 0.5 + centerOffsetX / (pipZoomScale * pixelsPerImageX);
+        const centerV = naturalHeight * 0.5 + centerOffsetY / (pipZoomScale * pixelsPerImageY);
+
+        return {
+            zoom: pipZoomScale,
+            panX: pipPanX,
+            panY: pipPanY,
+            imageWidth: baseDisplayWidth,
+            imageHeight: baseDisplayHeight,
+            sourceWidth: naturalWidth,
+            sourceHeight: naturalHeight,
+            centerU,
+            centerV
+        };
+    };
+
     const closeFullscreenFrame = () => {
         if (!fullscreenOpen) {
             return;
@@ -671,41 +709,14 @@ const initUI = (global: Global) => {
             return;
         }
 
-        const naturalWidth = fullImage.naturalWidth;
-        const naturalHeight = fullImage.naturalHeight;
-        const rect = fullImage.getBoundingClientRect();
-        if (!(naturalWidth > 0 && naturalHeight > 0 && rect.width > 0 && rect.height > 0)) {
+        const inspectState = getPipInspectState();
+        if (!inspectState) {
             return;
         }
-
-        const baseDisplayWidth = rect.width / pipZoomScale;
-        const baseDisplayHeight = rect.height / pipZoomScale;
-        if (!(baseDisplayWidth > 0 && baseDisplayHeight > 0)) {
-            return;
-        }
-
-        const viewportCenterX = window.innerWidth * 0.5;
-        const viewportCenterY = window.innerHeight * 0.5;
-        const transformedCenterX = rect.left + rect.width * 0.5;
-        const transformedCenterY = rect.top + rect.height * 0.5;
-        const centerOffsetX = viewportCenterX - transformedCenterX;
-        const centerOffsetY = viewportCenterY - transformedCenterY;
-        const pixelsPerImageX = baseDisplayWidth / naturalWidth;
-        const pixelsPerImageY = baseDisplayHeight / naturalHeight;
-        const centerU = naturalWidth * 0.5 + centerOffsetX / (pipZoomScale * pixelsPerImageX);
-        const centerV = naturalHeight * 0.5 + centerOffsetY / (pipZoomScale * pixelsPerImageY);
 
         events.fire('pipInspect:changed', {
             active: true,
-            zoom: pipZoomScale,
-            panX: pipPanX,
-            panY: pipPanY,
-            imageWidth: baseDisplayWidth,
-            imageHeight: baseDisplayHeight,
-            sourceWidth: naturalWidth,
-            sourceHeight: naturalHeight,
-            centerU,
-            centerV
+            ...inspectState
         });
     }
 

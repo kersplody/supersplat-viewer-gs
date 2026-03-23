@@ -279,6 +279,11 @@ class Viewer {
 
         });
 
+        events.on('pipInspect:changed', () => {
+            this.forceRenderNextFrame = true;
+            app.renderNextFrame = true;
+        });
+
         // Render voxel debug overlay
         app.on('prerender', () => {
             this.voxelOverlay?.update();
