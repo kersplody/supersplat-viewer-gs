@@ -5,7 +5,7 @@ import {
     Vec3,
     type CameraComponent
 } from 'playcanvas';
-import { XrControllers } from './xr-controllers';
+import { XrControllers } from 'playcanvas/scripts/esm/xr-controllers.mjs';
 import { XrNavigation } from 'playcanvas/scripts/esm/xr-navigation.mjs';
 
 import { Global } from './types';
@@ -36,12 +36,7 @@ const initXr = (global: Global) => {
 
     parent.addComponent('script');
     parent.script.create(XrControllers);
-    const xrNavigation = parent.script.create(XrNavigation);
-    if (xrNavigation) {
-        const nav = xrNavigation as { enableTeleport?: boolean; tryTeleport?: (inputSource: any) => void };
-        nav.enableTeleport = false;
-        nav.tryTeleport = () => {};
-    }
+    parent.script.create(XrNavigation);
 
     const teleportMaxDistance = 10;
     const clickMaxDurationMs = 350;
@@ -49,19 +44,15 @@ const initXr = (global: Global) => {
     const dragMoveThreshold = 0.005;
 
     const parentPos = new Vec3();
-
     const inputHandlers = new Map<any, {
-        handleSelectStart: Function,
-        handleSelectEnd: Function,
-        handleSqueezeStart: Function,
-        handleSqueezeEnd: Function
+        handleSelectStart: () => void,
+        handleSelectEnd: () => void
     }>();
     const movedInputs = new Set<any>();
     const dragState = new Map<any, {
         startTime: number,
         startHeight: number,
         startOrigin: Vec3,
-        mode: 'select' | 'squeeze',
         active: boolean,
         moved: boolean,
         dragging: boolean
@@ -79,7 +70,7 @@ const initXr = (global: Global) => {
                 }
             }
         } catch {
-            // ignore; will try getPosition
+            // Some runtimes may not expose origin for every input type.
         }
         try {
             if (typeof inputSource.getPosition === 'function') {
@@ -89,7 +80,7 @@ const initXr = (global: Global) => {
                 }
             }
         } catch {
-            // ignore; some platforms throw when grip pose is unavailable
+            // Grip pose may be unavailable.
         }
         return null;
     };
@@ -106,7 +97,7 @@ const initXr = (global: Global) => {
                 }
             }
         } catch {
-            // ignore; direction may be unavailable
+            // Direction may be unavailable.
         }
         return null;
     };
@@ -172,6 +163,7 @@ const initXr = (global: Global) => {
         const current = parent.getPosition();
         hitPoint.y = current.y;
         parent.setPosition(hitPoint);
+        app.renderNextFrame = true;
     };
 
     app.xr.on('start', () => {
@@ -209,19 +201,17 @@ const initXr = (global: Global) => {
             camera.camera.clearColor = clearColor;
         }
 
-        // Restore the canvas to the correct position in the DOM after exiting XR. In
-        // some browsers (e.g. Chrome on Android) the canvas is moved to a new root
-        // during XR, and needs to be moved back on exit.
         for (const [inputSource, handlers] of inputHandlers) {
             inputSource.off('selectstart', handlers.handleSelectStart);
             inputSource.off('selectend', handlers.handleSelectEnd);
-            inputSource.off('squeezestart', handlers.handleSqueezeStart);
-            inputSource.off('squeezeend', handlers.handleSqueezeEnd);
         }
         inputHandlers.clear();
         dragState.clear();
         movedInputs.clear();
 
+        // Restore the canvas to the correct position in the DOM after exiting XR. In
+        // some browsers (e.g. Chrome on Android) the canvas is moved to a new root
+        // during XR, and needs to be moved back on exit.
         requestAnimationFrame(() => {
             document.body.prepend(app.graphicsDevice.canvas);
             app.renderNextFrame = true;
@@ -229,7 +219,7 @@ const initXr = (global: Global) => {
     });
 
     app.xr.input.on('add', (inputSource) => {
-        const beginDrag = (mode: 'select' | 'squeeze') => {
+        const handleSelectStart = () => {
             const origin = getDragOrigin(inputSource);
             const startOrigin = new Vec3();
             if (origin) {
@@ -240,15 +230,10 @@ const initXr = (global: Global) => {
                 startTime: (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(),
                 startHeight: parent.getPosition().y,
                 startOrigin,
-                mode,
                 active: !!origin,
                 moved: false,
                 dragging: false
             });
-        };
-
-        const handleSelectStart = () => {
-            beginDrag('select');
         };
 
         const handleSelectEnd = () => {
@@ -261,7 +246,7 @@ const initXr = (global: Global) => {
             const heldMs = now - state.startTime;
 
             const suppressTeleport = movedInputs.has(inputSource);
-            if (state.mode === 'select' && !state.moved && !suppressTeleport && heldMs <= clickMaxDurationMs) {
+            if (!state.moved && !suppressTeleport && heldMs <= clickMaxDurationMs) {
                 tryTeleport(inputSource);
             }
 
@@ -269,27 +254,11 @@ const initXr = (global: Global) => {
             movedInputs.delete(inputSource);
         };
 
-        const handleSqueezeStart = () => {
-            beginDrag('squeeze');
-        };
-
-        const handleSqueezeEnd = () => {
-            const state = dragState.get(inputSource);
-            if (!state) {
-                return;
-            }
-            dragState.delete(inputSource);
-        };
-
         inputSource.on('selectstart', handleSelectStart);
         inputSource.on('selectend', handleSelectEnd);
-        inputSource.on('squeezestart', handleSqueezeStart);
-        inputSource.on('squeezeend', handleSqueezeEnd);
         inputHandlers.set(inputSource, {
             handleSelectStart,
-            handleSelectEnd,
-            handleSqueezeStart,
-            handleSqueezeEnd
+            handleSelectEnd
         });
     });
 
@@ -298,11 +267,10 @@ const initXr = (global: Global) => {
         if (handlers) {
             inputSource.off('selectstart', handlers.handleSelectStart);
             inputSource.off('selectend', handlers.handleSelectEnd);
-            inputSource.off('squeezestart', handlers.handleSqueezeStart);
-            inputSource.off('squeezeend', handlers.handleSqueezeEnd);
             inputHandlers.delete(inputSource);
         }
         dragState.delete(inputSource);
+        movedInputs.delete(inputSource);
     });
 
     app.on('update', () => {
@@ -335,6 +303,7 @@ const initXr = (global: Global) => {
             if (state.dragging) {
                 parentPos.copy(parent.getPosition());
                 parent.setPosition(parentPos.x, state.startHeight + deltaY, parentPos.z);
+                app.renderNextFrame = true;
             }
         }
     });
