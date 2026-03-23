@@ -483,6 +483,8 @@ const initUI = (global: Global) => {
         return JSON.stringify(value);
     };
 
+    const shouldDisplayMetadataKey = (key: string) => !/(^|:)srtTags$/i.test(key);
+
     const updatePipMetadataUiVisibility = () => {
         const hasMetadata = !!pipMetadataText;
         pipMetadataToggle.classList.toggle('hidden', !fullscreenOpen || !hasMetadata);
@@ -513,6 +515,7 @@ const initUI = (global: Global) => {
         }
 
         const commonLines = Object.entries(imdatHeaderCommon ?? {})
+        .filter(([key]) => shouldDisplayMetadataKey(key))
         .map(([key, value]) => {
             const rendered = renderMetadataValue(value);
             return rendered ? `${key}: ${rendered}` : null;
@@ -521,6 +524,7 @@ const initUI = (global: Global) => {
 
         const metadata = toFrameMetadata(selection);
         const photoLines = Object.entries(metadata ?? {})
+        .filter(([key]) => shouldDisplayMetadataKey(key))
         .map(([key, value]) => {
             const rendered = renderMetadataValue(value);
             return rendered ? `${key}: ${rendered}` : null;
