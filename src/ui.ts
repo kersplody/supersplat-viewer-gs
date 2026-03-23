@@ -320,6 +320,7 @@ const initUI = (global: Global) => {
     const flightMetadataTop = dom.flightMetadataTop;
     const imdatPhotos = normalizeImdatPhotos(global.imdat);
     const imdatHeaderCommon = normalizeImdatCommon(global.imdat);
+    const hasFramePreviews = global.settings.hasFramePreviews === true;
     const hasTransformFrames = Array.isArray(global.transforms?.frames) && global.transforms.frames.length > 0;
     let selectedFramePath: string | null = null;
     let fullscreenOpen = false;
@@ -626,8 +627,17 @@ const initUI = (global: Global) => {
         updatePipMetadataUiVisibility();
     };
 
+    const clearPipFrameSelection = () => {
+        selectedFramePath = null;
+        thumbImage.removeAttribute('src');
+        fullImage.removeAttribute('src');
+        pipMetadataText = '';
+        pipMetadataOpen = false;
+        updatePipMetadataUiVisibility();
+    };
+
     const updatePipVisibility = () => {
-        const shouldShow = !!selectedFramePath && !isAnimationRunning();
+        const shouldShow = hasFramePreviews && !!selectedFramePath && !isAnimationRunning();
         dom.pipFrameWrap.classList[shouldShow ? 'remove' : 'add']('hidden');
         updateFlightMetadataTopLayout();
         if (!shouldShow) {
@@ -947,12 +957,15 @@ const initUI = (global: Global) => {
     });
 
     events.on('transformFrame:selected', (selection) => {
+        if (!hasFramePreviews) {
+            clearPipFrameSelection();
+            updatePipVisibility();
+            return;
+        }
+
         const filePath = selection?.filePath as string | null;
         if (!filePath) {
-            selectedFramePath = null;
-            pipMetadataText = '';
-            pipMetadataOpen = false;
-            updatePipMetadataUiVisibility();
+            clearPipFrameSelection();
             return;
         }
 

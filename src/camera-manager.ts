@@ -22,12 +22,10 @@ const tmpCamera = new Camera();
 const tmpv = new Vec3();
 const tmpFramePosition = new Vec3();
 const tmpFrameForward = new Vec3();
-const tmpFrameUp = new Vec3();
 const tmpFrameTarget = new Vec3();
 const tmpCameraForward = new Vec3();
 const tmpQuat = new Quat();
 const tmpQuat2 = new Quat();
-const tmpLookAt = new Mat4();
 const tmpPipDir = new Vec3();
 const tmpPipWorldDir = new Vec3();
 const tmpPipTarget = new Vec3();
@@ -104,21 +102,18 @@ const frameToCamera = (frame: TransformFrame, fov: number, worldRotation: Mat4 |
     }
 
     // COLMAP/NeRF transform_matrix is camera-to-world. Camera forward is -Z (third column negated).
+    // The runtime controllers are yaw/pitch based and do not support arbitrary roll well,
+    // so normalize frame cameras to a roll-free pose here.
     tmpFramePosition.set(m[0][3], m[1][3], m[2][3]);
     tmpFrameForward.set(-m[0][2], -m[1][2], -m[2][2]).normalize();
-    tmpFrameUp.set(m[0][1], m[1][1], m[2][1]).normalize();
 
     if (worldRotation) {
         worldRotation.transformPoint(tmpFramePosition, tmpFramePosition);
         worldRotation.transformVector(tmpFrameForward, tmpFrameForward).normalize();
-        worldRotation.transformVector(tmpFrameUp, tmpFrameUp).normalize();
     }
     const result = new Camera();
     tmpFrameTarget.copy(tmpFramePosition).add(tmpFrameForward);
-    result.position.copy(tmpFramePosition);
-    result.distance = tmpFramePosition.distance(tmpFrameTarget);
-    tmpLookAt.setLookAt(tmpFramePosition, tmpFrameTarget, tmpFrameUp);
-    tmpQuat2.setFromMat4(tmpLookAt).getEulerAngles(result.angles);
+    result.look(tmpFramePosition, tmpFrameTarget);
     result.fov = fov;
     return result;
 };
