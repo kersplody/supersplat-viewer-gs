@@ -49,12 +49,19 @@ const migrateAnimTrackV2 = (animTrackV1: AnimTrackV1, fov: number): AnimTrackV2 
 };
 
 const migrateV2 = (v1: V1): V2 => {
+    const backgroundColor = v1.background?.color as [number, number, number] | undefined;
+    const camera = v1.camera ?? {};
+    const animTracks = v1.animTracks ?? [];
+    const cameraFov = camera.fov || 75;
+
     return {
         version: 2,
         tonemapping: 'none',
         highPrecisionRendering: false,
+        hasFramePreviews: v1.hasFramePreviews,
+        sceneRotation: v1.sceneRotation,
         background: {
-            color: v1.background.color as [number, number, number] || [0, 0, 0]
+            color: backgroundColor || [0, 0, 0]
         },
         postEffectSettings: {
             sharpness: {
@@ -85,18 +92,18 @@ const migrateV2 = (v1: V1): V2 => {
                 intensity: 0.5
             }
         },
-        animTracks: v1.animTracks.map((animTrackV1: AnimTrackV1) => {
-            return migrateAnimTrackV2(animTrackV1, v1.camera.fov || 60);
+        animTracks: animTracks.map((animTrackV1: AnimTrackV1) => {
+            return migrateAnimTrackV2(animTrackV1, cameraFov || 60);
         }),
-        cameras: (v1.camera.position && v1.camera.target) ? [{
+        cameras: (camera.position && camera.target) ? [{
             initial: {
-                position: v1.camera.position as [number, number, number],
-                target: v1.camera.target as [number, number, number],
-                fov: v1.camera.fov || 75
+                position: camera.position as [number, number, number],
+                target: camera.target as [number, number, number],
+                fov: cameraFov
             }
         }] : [],
         annotations: [],
-        startMode: v1.camera.startAnim === 'animTrack' ? 'animTrack' : 'default'
+        startMode: camera.startAnim === 'animTrack' ? 'animTrack' : 'default'
     };
 };
 
@@ -110,7 +117,52 @@ const importSettings = (settings: any): V2 => {
         result = migrateV2(migrateV1(settings as V1));
     } else if (version === 2) {
         // already v2
-        result = settings as V2;
+        result = {
+            version: 2,
+            tonemapping: settings.tonemapping ?? 'none',
+            highPrecisionRendering: settings.highPrecisionRendering ?? false,
+            background: {
+                color: settings.background?.color ?? [0, 0, 0],
+                skyboxUrl: settings.background?.skyboxUrl
+            },
+            postEffectSettings: settings.postEffectSettings ?? {
+                sharpness: {
+                    enabled: false,
+                    amount: 0
+                },
+                bloom: {
+                    enabled: false,
+                    intensity: 1,
+                    blurLevel: 2
+                },
+                grading: {
+                    enabled: false,
+                    brightness: 0,
+                    contrast: 1,
+                    saturation: 1,
+                    tint: [1, 1, 1]
+                },
+                vignette: {
+                    enabled: false,
+                    intensity: 0.5,
+                    inner: 0.3,
+                    outer: 0.75,
+                    curvature: 1
+                },
+                fringing: {
+                    enabled: false,
+                    intensity: 0.5
+                }
+            },
+            animTracks: settings.animTracks ?? [],
+            cameras: settings.cameras ?? [],
+            annotations: settings.annotations ?? [],
+            startMode: settings.startMode ?? 'default',
+            soundUrl: settings.soundUrl,
+            xrheight: settings.xrheight,
+            hasFramePreviews: settings.hasFramePreviews,
+            sceneRotation: settings.sceneRotation
+        } as V2;
     } else {
         throw new Error(`Unsupported experience settings version: ${version}`);
     }

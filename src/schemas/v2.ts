@@ -80,6 +80,12 @@ type ExperienceSettings = {
     highPrecisionRendering: boolean,
     soundUrl?: string,
     xrheight?: number,
+    hasFramePreviews?: boolean,
+    sceneRotation?: {
+        x: number,
+        y: number,
+        z: number,
+    },
     background: {
         color: [number, number, number],
         skyboxUrl?: string
@@ -178,6 +184,13 @@ const validateV2 = (data: unknown): ExperienceSettings => {
     assertEnum(obj.tonemapping, TONEMAPPING, 'settings.tonemapping');
     assertBoolean(obj.highPrecisionRendering, 'settings.highPrecisionRendering');
     if (obj.soundUrl !== undefined) assertString(obj.soundUrl, 'settings.soundUrl');
+    if (obj.hasFramePreviews !== undefined) assertBoolean(obj.hasFramePreviews, 'settings.hasFramePreviews');
+    if (obj.sceneRotation !== undefined) {
+        const sceneRotation = assertObject(obj.sceneRotation, 'settings.sceneRotation');
+        assertNumber(sceneRotation.x, 'settings.sceneRotation.x');
+        assertNumber(sceneRotation.y, 'settings.sceneRotation.y');
+        assertNumber(sceneRotation.z, 'settings.sceneRotation.z');
+    }
 
     const bg = assertObject(obj.background, 'settings.background');
     assertTuple3(bg.color, 'settings.background.color');
