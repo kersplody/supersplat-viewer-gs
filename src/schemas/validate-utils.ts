@@ -58,6 +58,14 @@ const assertTuple3 = (value: unknown, path: string): [number, number, number] =>
     return arr as [number, number, number];
 };
 
+const assertTuple4 = (value: unknown, path: string): [number, number, number, number] => {
+    const arr = assertNumberArray(value, path);
+    if (arr.length !== 4) {
+        throw new Error(`${path} must have exactly 4 elements`);
+    }
+    return arr as [number, number, number, number];
+};
+
 export type { Obj };
 export {
     assertObject,
@@ -67,5 +75,6 @@ export {
     assertEnum,
     assertArray,
     assertNumberArray,
-    assertTuple3
+    assertTuple3,
+    assertTuple4
 };

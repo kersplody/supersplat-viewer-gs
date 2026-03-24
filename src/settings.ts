@@ -58,6 +58,7 @@ const migrateV2 = (v1: V1): V2 => {
         version: 2,
         tonemapping: 'none',
         highPrecisionRendering: false,
+        scene_meas_scale: 1,
         hasFramePreviews: v1.hasFramePreviews,
         sceneRotation: v1.sceneRotation,
         background: {
@@ -121,6 +122,7 @@ const importSettings = (settings: any): V2 => {
             version: 2,
             tonemapping: settings.tonemapping ?? 'none',
             highPrecisionRendering: settings.highPrecisionRendering ?? false,
+            scene_meas_scale: settings.scene_meas_scale ?? 1,
             background: {
                 color: settings.background?.color ?? [0, 0, 0],
                 skyboxUrl: settings.background?.skyboxUrl
@@ -186,6 +188,6 @@ const validateSettings = (settings: unknown): void => {
     }
 };
 
-export type { AnimTrack, Camera, Annotation, PostEffectSettings, ExperienceSettings } from './schemas/v2';
+export type { AnimTrack, Camera, Annotation, PostEffectSettings, ExperienceSettings, Vec3, Rgba, LineDecorator, MeasurementUnit } from './schemas/v2';
 
 export { importSettings, validateSettings };

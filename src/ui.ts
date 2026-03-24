@@ -140,8 +140,9 @@ const initJoystick = (
 const initAnnotationNav = (
     dom: Record<string, HTMLElement>,
     events: EventHandler,
-    state: { loaded: boolean; inputMode: string; controlsHidden: boolean; annotationsVisible: boolean },
-    annotations: Annotation[]
+    state: { loaded: boolean; inputMode: string; controlsHidden: boolean; annotationsVisible: boolean; cameraMode: string },
+    annotations: Annotation[],
+    hasFramePreviews: boolean
 ) => {
     // Only show navigator when there are at least 2 annotations
     if (annotations.length < 2) return;
@@ -154,6 +155,13 @@ const initAnnotationNav = (
 
     const updateMode = () => {
         if (!state.loaded) return;
+        const hidden = hasFramePreviews &&
+            state.cameraMode === 'fly' &&
+            dom.pipFrameWrap.classList.contains('hidden');
+        dom.annotationNav.classList.toggle('hidden', hidden);
+        if (hidden) {
+            return;
+        }
         dom.annotationNav.classList.remove('desktop', 'touch', 'hidden');
         dom.annotationNav.classList.add(state.inputMode);
     };
@@ -198,6 +206,8 @@ const initAnnotationNav = (
         updateFade();
     });
     events.on('inputMode:changed', updateMode);
+    events.on('cameraMode:changed', updateMode);
+    events.on('pipVisibility:changed', updateMode);
     events.on('controlsHidden:changed', updateFade);
     events.on('annotationsVisible:changed', updateFade);
 
@@ -435,6 +445,17 @@ const initUI = (global: Global) => {
 
         flightMetadataTop.style.left = `${Math.max(edgePad, leftBound)}px`;
         flightMetadataTop.style.right = `${Math.max(edgePad, window.innerWidth - rightBound)}px`;
+
+        const annotationNav = dom.annotationNav;
+        if (annotationNav && state.inputMode === 'desktop') {
+            const metadataVisible = !flightMetadataTop.classList.contains('hidden') && !!flightMetadataTop.textContent?.trim();
+            const top = metadataVisible ?
+                Math.ceil(flightMetadataTop.getBoundingClientRect().bottom + gap) :
+                16;
+            annotationNav.style.top = `${top}px`;
+        } else if (annotationNav) {
+            annotationNav.style.removeProperty('top');
+        }
     };
 
     const toFrameMetadata = (selection: { filePath?: string | null; colmapImId?: number | null } | null | undefined) => {
@@ -684,6 +705,7 @@ const initUI = (global: Global) => {
     const updatePipVisibility = () => {
         const shouldShow = hasFramePreviews && !!selectedFramePath && !isAnimationRunning();
         dom.pipFrameWrap.classList[shouldShow ? 'remove' : 'add']('hidden');
+        events.fire('pipVisibility:changed', shouldShow);
         updateFlightMetadataTopLayout();
         if (!shouldShow) {
             closeFullscreenFrame();
@@ -1421,7 +1443,7 @@ const initUI = (global: Global) => {
     initJoystick(dom, events, state);
 
     // Initialize annotation navigator
-    initAnnotationNav(dom, events, state, global.settings.annotations);
+    initAnnotationNav(dom, events, state, global.settings.annotations, hasFramePreviews);
 
     // Hide all UI (poster, loading bar, controls)
     if (config.noui) {
@@ -1470,6 +1492,7 @@ const initUI = (global: Global) => {
     updateFlightMetadataTop();
     updateFlightMetadataTopLayout();
     window.addEventListener('resize', updateFlightMetadataTopLayout);
+    events.on('inputMode:changed', updateFlightMetadataTopLayout);
 };
 
 export { initPoster, initUI };

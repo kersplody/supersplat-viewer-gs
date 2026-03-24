@@ -81,6 +81,10 @@ export class Annotation extends Script {
 
     static opacity = 1.0;
 
+    static defaultTooltipTextColor = 'rgba(255, 255, 255, 1)';
+
+    static defaultTooltipBackgroundColor = 'rgba(0, 0, 0, 0.8)';
+
     /**
      * @attribute
      */
@@ -95,6 +99,16 @@ export class Annotation extends Script {
      * @attribute
      */
     text: string;
+
+    /**
+     * @attribute
+     */
+    textColor: string;
+
+    /**
+     * @attribute
+     */
+    msgBoxColor: string;
 
     /**
      * @private
@@ -121,8 +135,8 @@ export class Annotation extends Script {
             .pc-annotation {
                 display: block;
                 position: absolute;
-                background-color: rgba(0, 0, 0, 0.8);
-                color: white;
+                background-color: var(--annotation-bg, rgba(0, 0, 0, 0.8));
+                color: var(--annotation-text, rgba(255, 255, 255, 1));
                 padding: 8px;
                 border-radius: 4px;
                 font-size: 14px;
@@ -156,12 +170,12 @@ export class Annotation extends Script {
 
             .pc-annotation.arrow-right::before {
                 left: -8px;
-                border-right: 8px solid rgba(0, 0, 0, 0.8);
+                border-right: 8px solid var(--annotation-bg, rgba(0, 0, 0, 0.8));
             }
 
             .pc-annotation.arrow-left::before {
                 right: -8px;
-                border-left: 8px solid rgba(0, 0, 0, 0.8);
+                border-left: 8px solid var(--annotation-bg, rgba(0, 0, 0, 0.8));
             }
 
             .pc-annotation-hotspot {
@@ -171,6 +185,21 @@ export class Annotation extends Script {
                 height: ${size + 5}px;
                 opacity: 0;
                 cursor: pointer;
+                transform: translate(-50%, -50%);
+            }
+
+            .pc-annotation-measure {
+                display: none;
+                position: absolute;
+                padding: 4px 8px;
+                border-radius: 999px;
+                background-color: rgba(0, 0, 0, 0.72);
+                color: rgba(255, 255, 255, 1);
+                font-size: 12px;
+                font-weight: 600;
+                line-height: 1;
+                white-space: nowrap;
+                pointer-events: none;
                 transform: translate(-50%, -50%);
             }
         `;
@@ -508,6 +537,8 @@ export class Annotation extends Script {
         Annotation.activeAnnotation = this;
         Annotation.tooltipDom.style.visibility = 'visible';
         Annotation.tooltipDom.style.opacity = '1';
+        Annotation.tooltipDom.style.setProperty('--annotation-text', this.textColor || Annotation.defaultTooltipTextColor);
+        Annotation.tooltipDom.style.setProperty('--annotation-bg', this.msgBoxColor || Annotation.defaultTooltipBackgroundColor);
         Annotation.titleDom.textContent = this.title;
         Annotation.textDom.textContent = this.text;
 
@@ -523,6 +554,8 @@ export class Annotation extends Script {
     hideTooltip() {
         Annotation.activeAnnotation = null;
         Annotation.tooltipDom.style.opacity = '0';
+        Annotation.tooltipDom.style.removeProperty('--annotation-text');
+        Annotation.tooltipDom.style.removeProperty('--annotation-bg');
 
         // Wait for fade out before hiding
         setTimeout(() => {
@@ -571,6 +604,13 @@ export class Annotation extends Script {
             const th = tooltip.offsetHeight;
             const vw = window.innerWidth;
             const vh = window.innerHeight;
+            const flightMetadataTop = document.getElementById('flightMetadataTop');
+            const metadataVisible = flightMetadataTop &&
+                !flightMetadataTop.classList.contains('hidden') &&
+                flightMetadataTop.textContent?.trim();
+            const metadataBottom = metadataVisible ?
+                flightMetadataTop.getBoundingClientRect().bottom + margin :
+                margin;
 
             // Default position: to the right of hotspot, vertically centered
             let left = screenPos.x + arrowOffset;
@@ -587,7 +627,7 @@ export class Annotation extends Script {
             left = Math.max(margin, Math.min(left, vw - tw - margin));
 
             // Clamp vertical
-            top = Math.max(margin, Math.min(top, vh - th - margin));
+            top = Math.max(metadataBottom, Math.min(top, vh - th - margin));
 
             // Position arrow to point at the hotspot, clamped within the tooltip
             const arrowY = Math.max(16, Math.min(screenPos.y - top, th - 16));
