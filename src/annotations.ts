@@ -1,9 +1,12 @@
 import {
     BLEND_NORMAL,
     Color,
+    CULLFACE_NONE,
     Entity,
     type Entity as EntityType,
+    MeshInstance,
     StandardMaterial,
+    createMesh,
     Vec3
 } from 'playcanvas';
 
@@ -34,6 +37,14 @@ type MeasurementLabel = {
     dom: HTMLDivElement;
     start: Vec3;
     end: Vec3;
+};
+
+type BoxGeometry = {
+    bottom: readonly Vec3[];
+    top: readonly Vec3[];
+    center: Vec3;
+    scale: Vec3 | null;
+    rotationTarget: Vec3 | null;
 };
 
 const formatLength = (value: number) => {
@@ -87,6 +98,73 @@ const createPrimitiveMaterial = (rgba: Rgba) => {
     return material;
 };
 
+const createFillMaterial = (rgba: Rgba) => {
+    const color = createColor(rgba);
+    const material = new StandardMaterial();
+    material.diffuse.set(color.r, color.g, color.b);
+    material.emissive.set(0, 0, 0);
+    material.useLighting = true;
+    material.twoSidedLighting = true;
+    material.cull = CULLFACE_NONE;
+    material.opacity = color.a;
+    if (color.a < 1) {
+        material.blendType = BLEND_NORMAL;
+        material.depthWrite = false;
+    }
+    material.update();
+    return material;
+};
+
+const appendQuad = (
+    positions: number[],
+    normals: number[],
+    indices: number[],
+    p0: Vec3,
+    p1: Vec3,
+    p2: Vec3,
+    p3: Vec3
+) => {
+    const baseIndex = positions.length / 3;
+    const edge0 = new Vec3().sub2(p1, p0);
+    const edge1 = new Vec3().sub2(p2, p0);
+    const normal = new Vec3().cross(edge0, edge1).normalize();
+    [p0, p1, p2, p3].forEach((point) => {
+        positions.push(point.x, point.y, point.z);
+        normals.push(normal.x, normal.y, normal.z);
+    });
+    indices.push(
+        baseIndex, baseIndex + 1, baseIndex + 2,
+        baseIndex, baseIndex + 2, baseIndex + 3
+    );
+};
+
+const createPrismFillEntity = (graphicsDevice: Global['app']['graphicsDevice'], box: BoxGeometry, material: StandardMaterial) => {
+    const positions: number[] = [];
+    const normals: number[] = [];
+    const indices: number[] = [];
+
+    appendQuad(positions, normals, indices, box.bottom[0], box.bottom[3], box.bottom[2], box.bottom[1]);
+    appendQuad(positions, normals, indices, box.top[0], box.top[1], box.top[2], box.top[3]);
+
+    for (let i = 0; i < box.bottom.length; i++) {
+        const next = (i + 1) % box.bottom.length;
+        appendQuad(positions, normals, indices, box.bottom[i], box.bottom[next], box.top[next], box.top[i]);
+    }
+
+    const mesh = createMesh(graphicsDevice, positions, {
+        normals,
+        indices
+    });
+
+    const entity = new Entity('annotation-box-fill');
+    const meshInstance = new MeshInstance(mesh, material);
+    meshInstance.cull = false;
+    entity.addComponent('render', {
+        meshInstances: [meshInstance]
+    });
+    return entity;
+};
+
 const configureSegmentTransform = (entity: Entity, start: Vec3, end: Vec3, thickness: number) => {
     tmpVecA.sub2(end, start);
     const length = tmpVecA.length();
@@ -119,6 +197,88 @@ const configureArrowDecorator = (entity: Entity, point: Vec3, direction: Vec3, t
     entity.setLocalScale(thickness * 2.2, headLength, thickness * 2.2);
 };
 
+const buildAxisAlignedBox = (points: AnnotationSettings['points']): BoxGeometry => {
+    const [a, b] = points!;
+    const minX = Math.min(a[0], b[0]);
+    const maxX = Math.max(a[0], b[0]);
+    const minY = Math.min(a[1], b[1]);
+    const maxY = Math.max(a[1], b[1]);
+    const minZ = Math.min(a[2], b[2]);
+    const maxZ = Math.max(a[2], b[2]);
+
+    const bottom = [
+        new Vec3(minX, minY, minZ),
+        new Vec3(maxX, minY, minZ),
+        new Vec3(maxX, minY, maxZ),
+        new Vec3(minX, minY, maxZ)
+    ] as const;
+
+    const top = [
+        new Vec3(minX, maxY, minZ),
+        new Vec3(maxX, maxY, minZ),
+        new Vec3(maxX, maxY, maxZ),
+        new Vec3(minX, maxY, maxZ)
+    ] as const;
+
+    return {
+        bottom,
+        top,
+        center: new Vec3(
+            (minX + maxX) * 0.5,
+            (minY + maxY) * 0.5,
+            (minZ + maxZ) * 0.5
+        ),
+        scale: new Vec3(
+            Math.max(1e-4, maxX - minX),
+            Math.max(1e-4, maxY - minY),
+            Math.max(1e-4, maxZ - minZ)
+        ),
+        rotationTarget: null as Vec3 | null
+    };
+};
+
+const buildThreePointBox = (points: [number[], number[], number[]]): BoxGeometry | null => {
+    const [a, b, c] = points;
+    const baseA = new Vec3(a[0], 0, a[2]);
+    const baseB = new Vec3(b[0], 0, b[2]);
+    const baseC = new Vec3(c[0], 0, c[2]);
+    const yValues = [a[1], b[1], c[1]];
+    const minY = Math.min(...yValues);
+    const maxY = Math.max(...yValues);
+    const baseD = new Vec3(baseB.x + baseC.x - baseA.x, 0, baseB.z + baseC.z - baseA.z);
+
+    tmpVecA.sub2(baseB, baseA);
+    tmpVecB.sub2(baseC, baseA);
+    const areaTwice = tmpVecA.x * tmpVecB.z - tmpVecA.z * tmpVecB.x;
+    if (Math.abs(areaTwice) <= 1e-8) {
+        return null;
+    }
+
+    const bottom = [
+        new Vec3(baseA.x, minY, baseA.z),
+        new Vec3(baseB.x, minY, baseB.z),
+        new Vec3(baseD.x, minY, baseD.z),
+        new Vec3(baseC.x, minY, baseC.z)
+    ];
+    const top = [
+        new Vec3(baseA.x, maxY, baseA.z),
+        new Vec3(baseB.x, maxY, baseB.z),
+        new Vec3(baseD.x, maxY, baseD.z),
+        new Vec3(baseC.x, maxY, baseC.z)
+    ];
+
+    const center = new Vec3().add2(bottom[0], bottom[2]).mulScalar(0.5);
+    center.y = (minY + maxY) * 0.5;
+
+    return {
+        bottom,
+        top,
+        center,
+        scale: null,
+        rotationTarget: null
+    };
+};
+
 class AnnotationGeometry {
     root: Entity;
 
@@ -140,6 +300,8 @@ class AnnotationGeometry {
 
     measureScale: number;
 
+    graphicsDevice: Global['app']['graphicsDevice'];
+
     constructor(global: Global, annotation: AnnotationSettings) {
         this.root = new Entity('annotation-geometry');
         this.anchor = new Vec3(annotation.position[0], annotation.position[1], annotation.position[2]);
@@ -149,6 +311,7 @@ class AnnotationGeometry {
         this.measureScale = Number.isFinite(global.settings.scene_meas_scale) && global.settings.scene_meas_scale > 0 ?
             global.settings.scene_meas_scale :
             1;
+        this.graphicsDevice = global.app.graphicsDevice;
 
         const lineColor = annotation.lineColor ?? DEFAULT_LINE_COLOR;
         const edgeMaterial = createPrimitiveMaterial(lineColor);
@@ -231,78 +394,44 @@ class AnnotationGeometry {
 
     private buildBox(annotation: AnnotationSettings, material: StandardMaterial) {
         const points = annotation.points!;
+        const box = points.length === 3 ?
+            (buildThreePointBox(points as [number[], number[], number[]]) ?? buildAxisAlignedBox(points)) :
+            buildAxisAlignedBox(points);
 
-        let minX: number;
-        let maxX: number;
-        let minY: number;
-        let maxY: number;
-        let minZ: number;
-        let maxZ: number;
-
-        if (points.length === 3) {
-            const [a, b, c] = points;
-            minX = Math.min(a[0], b[0], c[0]);
-            maxX = Math.max(a[0], b[0], c[0]);
-            minZ = Math.min(a[2], b[2], c[2]);
-            maxZ = Math.max(a[2], b[2], c[2]);
-            minY = Math.min(a[1], b[1], c[1]);
-            maxY = Math.max(a[1], b[1], c[1]);
-        } else {
-            const [a, b] = points;
-            minX = Math.min(a[0], b[0]);
-            maxX = Math.max(a[0], b[0]);
-            minZ = Math.min(a[2], b[2]);
-            maxZ = Math.max(a[2], b[2]);
-            minY = Math.min(a[1], b[1]);
-            maxY = Math.max(a[1], b[1]);
+        const count = box.bottom.length;
+        for (let i = 0; i < count; i++) {
+            const next = (i + 1) % count;
+            this.createSegment(box.bottom[i], box.bottom[next], material);
+            this.createSegment(box.top[i], box.top[next], material);
+            this.createSegment(box.bottom[i], box.top[i], material);
         }
 
-        const corners = [
-            new Vec3(minX, minY, minZ),
-            new Vec3(maxX, minY, minZ),
-            new Vec3(maxX, minY, maxZ),
-            new Vec3(minX, minY, maxZ),
-            new Vec3(minX, maxY, minZ),
-            new Vec3(maxX, maxY, minZ),
-            new Vec3(maxX, maxY, maxZ),
-            new Vec3(minX, maxY, maxZ)
-        ];
-
-        const edges: [number, number][] = [
-            [0, 1], [1, 2], [2, 3], [3, 0],
-            [4, 5], [5, 6], [6, 7], [7, 4],
-            [0, 4], [1, 5], [2, 6], [3, 7]
-        ];
-
-        edges.forEach(([i0, i1]) => {
-            this.createSegment(corners[i0], corners[i1], material);
-        });
-
-        if (this.showMeasurement) {
-            this.createMeasurementLabel(corners[0], corners[1]);
-            this.createMeasurementLabel(corners[0], corners[3]);
-            this.createMeasurementLabel(corners[0], corners[4]);
+        if (this.showMeasurement && count >= 2) {
+            this.createMeasurementLabel(box.bottom[0], box.bottom[1]);
+            this.createMeasurementLabel(box.bottom[0], box.bottom[count - 1]);
+            this.createMeasurementLabel(box.bottom[0], box.top[0]);
         }
 
-        const fillMaterial = createPrimitiveMaterial(annotation.boxColor ?? DEFAULT_BOX_COLOR);
-        this.materials.push(fillMaterial);
-        const fill = new Entity('annotation-box-fill');
-        fill.addComponent('render', {
-            type: 'box',
-            material: fillMaterial
-        });
-        tmpVecA.set(
-            (minX + maxX) * 0.5,
-            (minY + maxY) * 0.5,
-            (minZ + maxZ) * 0.5
-        );
-        fill.setPosition(tmpVecA);
-        fill.setLocalScale(
-            Math.max(1e-4, maxX - minX),
-            Math.max(1e-4, maxY - minY),
-            Math.max(1e-4, maxZ - minZ)
-        );
-        this.root.addChild(fill);
+        {
+            const fillMaterial = createFillMaterial(annotation.boxColor ?? DEFAULT_BOX_COLOR);
+            this.materials.push(fillMaterial);
+            const fill = box.scale ?
+                new Entity('annotation-box-fill') :
+                createPrismFillEntity(this.graphicsDevice, box, fillMaterial);
+
+            if (box.scale) {
+                fill.addComponent('render', {
+                    type: 'box',
+                    material: fillMaterial
+                });
+                fill.setPosition(box.center);
+                if (box.rotationTarget) {
+                    fill.lookAt(box.rotationTarget);
+                }
+                fill.setLocalScale(box.scale);
+            }
+            this.root.addChild(fill);
+        }
     }
 
     private computeThicknessWorld(cameraEntity: Entity) {
@@ -370,7 +499,7 @@ class AnnotationGeometry {
 
     setVisible(visible: boolean) {
         this.root.enabled = visible;
-        this.measurementLabels.forEach(label => {
+        this.measurementLabels.forEach((label) => {
             label.dom.style.display = visible && this.showMeasurement ? label.dom.style.display : 'none';
         });
     }
