@@ -1,5 +1,7 @@
-import { ExperienceSettings as V1, AnimTrack as AnimTrackV1, validateV1 } from './schemas/v1';
-import { ExperienceSettings as V2, AnimTrack as AnimTrackV2, validateV2 } from './schemas/v2';
+import type { ExperienceSettings as V1, AnimTrack as AnimTrackV1 } from './schemas/v1';
+import { validateV1 } from './schemas/v1';
+import type { ExperienceSettings as V2, AnimTrack as AnimTrackV2 } from './schemas/v2';
+import { validateV2 } from './schemas/v2';
 import { assertObject } from './schemas/validate-utils';
 
 const migrateV1 = (settings: V1): V1 => {
@@ -17,6 +19,7 @@ const migrateV1 = (settings: V1): V1 => {
             }
 
             // smoothness property added in v1.4.0
+            // eslint-disable-next-line no-prototype-builtins -- preserve property lookup semantics
             if (!track.hasOwnProperty('smoothness')) {
                 track.smoothness = 0;
             }
@@ -49,20 +52,12 @@ const migrateAnimTrackV2 = (animTrackV1: AnimTrackV1, fov: number): AnimTrackV2 
 };
 
 const migrateV2 = (v1: V1): V2 => {
-    const backgroundColor = v1.background?.color as [number, number, number] | undefined;
-    const camera = v1.camera ?? {};
-    const animTracks = v1.animTracks ?? [];
-    const cameraFov = camera.fov || 75;
-
     return {
         version: 2,
         tonemapping: 'none',
         highPrecisionRendering: false,
-        scene_meas_scale: 1,
-        hasFramePreviews: v1.hasFramePreviews,
-        sceneRotation: v1.sceneRotation,
         background: {
-            color: backgroundColor || [0, 0, 0]
+            color: (v1.background.color as [number, number, number]) || [0, 0, 0]
         },
         postEffectSettings: {
             sharpness: {
@@ -93,78 +88,37 @@ const migrateV2 = (v1: V1): V2 => {
                 intensity: 0.5
             }
         },
-        animTracks: animTracks.map((animTrackV1: AnimTrackV1) => {
-            return migrateAnimTrackV2(animTrackV1, cameraFov || 60);
+        animTracks: v1.animTracks.map((animTrackV1: AnimTrackV1) => {
+            return migrateAnimTrackV2(animTrackV1, v1.camera.fov || 60);
         }),
-        cameras: (camera.position && camera.target) ? [{
-            initial: {
-                position: camera.position as [number, number, number],
-                target: camera.target as [number, number, number],
-                fov: cameraFov
-            }
-        }] : [],
+        cameras:
+            v1.camera.position && v1.camera.target
+                ? [
+                      {
+                          initial: {
+                              position: v1.camera.position as [number, number, number],
+                              target: v1.camera.target as [number, number, number],
+                              fov: v1.camera.fov || 75
+                          }
+                      }
+                  ]
+                : [],
         annotations: [],
-        startMode: camera.startAnim === 'animTrack' ? 'animTrack' : 'default'
+        startMode: v1.camera.startAnim === 'animTrack' ? 'animTrack' : 'default'
     };
 };
 
 // migrate a JSON object to the latest settings schema (assumes valid input)
-const importSettings = (settings: any): V2 => {
+const importSettings = (settings: unknown): V2 => {
     let result: V2;
 
-    const version = settings.version;
+    const version = (settings as { version?: unknown }).version;
     if (version === undefined) {
         // v1 -> v2
         result = migrateV2(migrateV1(settings as V1));
     } else if (version === 2) {
         // already v2
-        result = {
-            version: 2,
-            tonemapping: settings.tonemapping ?? 'none',
-            highPrecisionRendering: settings.highPrecisionRendering ?? false,
-            scene_meas_scale: settings.scene_meas_scale ?? 1,
-            background: {
-                color: settings.background?.color ?? [0, 0, 0],
-                skyboxUrl: settings.background?.skyboxUrl
-            },
-            postEffectSettings: settings.postEffectSettings ?? {
-                sharpness: {
-                    enabled: false,
-                    amount: 0
-                },
-                bloom: {
-                    enabled: false,
-                    intensity: 1,
-                    blurLevel: 2
-                },
-                grading: {
-                    enabled: false,
-                    brightness: 0,
-                    contrast: 1,
-                    saturation: 1,
-                    tint: [1, 1, 1]
-                },
-                vignette: {
-                    enabled: false,
-                    intensity: 0.5,
-                    inner: 0.3,
-                    outer: 0.75,
-                    curvature: 1
-                },
-                fringing: {
-                    enabled: false,
-                    intensity: 0.5
-                }
-            },
-            animTracks: settings.animTracks ?? [],
-            cameras: settings.cameras ?? [],
-            annotations: settings.annotations ?? [],
-            startMode: settings.startMode ?? 'default',
-            soundUrl: settings.soundUrl,
-            xrheight: settings.xrheight,
-            hasFramePreviews: settings.hasFramePreviews,
-            sceneRotation: settings.sceneRotation
-        } as V2;
+        result = settings as V2;
     } else {
         throw new Error(`Unsupported experience settings version: ${version}`);
     }
@@ -188,6 +142,6 @@ const validateSettings = (settings: unknown): void => {
     }
 };
 
-export type { AnimTrack, Camera, Annotation, PostEffectSettings, ExperienceSettings, Vec3, Rgba, LineDecorator, MeasurementUnit } from './schemas/v2';
+export type { AnimTrack, Camera, Annotation, PostEffectSettings, ExperienceSettings } from './schemas/v2';
 
 export { importSettings, validateSettings };

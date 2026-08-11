@@ -1,10 +1,7 @@
-import {
-    OrbitController as OrbitControllerPC,
-    Pose,
-    Vec2
-} from 'playcanvas';
+import { OrbitController as OrbitControllerPC, Pose, Vec2 } from 'playcanvas';
 
 import type { Camera, CameraFrame, CameraController } from './camera';
+import { DEFAULT_CONTROLLER_DAMPING } from './camera-utils';
 
 const p = new Pose();
 
@@ -17,16 +14,13 @@ class OrbitController implements CameraController {
         this.controller = new OrbitControllerPC();
         this.controller.zoomRange = new Vec2(0.01, Infinity);
         this.controller.pitchRange = new Vec2(-90, 90);
-        this.controller.rotateDamping = 0.97;
-        this.controller.moveDamping = 0.97;
-        this.controller.zoomDamping = 0.97;
+        this.controller.rotateDamping = DEFAULT_CONTROLLER_DAMPING;
+        this.controller.moveDamping = DEFAULT_CONTROLLER_DAMPING;
+        this.controller.zoomDamping = DEFAULT_CONTROLLER_DAMPING;
     }
 
     onEnter(camera: Camera): void {
-        p.position.copy(camera.position);
-        p.angles.copy(camera.angles);
-        p.distance = camera.distance;
-        this.controller.attach(p, false);
+        this._attach(camera);
     }
 
     update(deltaTime: number, inputFrame: CameraFrame, camera: Camera) {
@@ -38,15 +32,19 @@ class OrbitController implements CameraController {
         camera.fov = this.fov;
     }
 
-    onExit(camera: Camera): void {
-
+    onExit(_camera: Camera) {
+        // no cleanup needed
     }
 
     goto(camera: Camera) {
+        this.fov = camera.fov;
+        this._attach(camera);
+    }
+
+    private _attach(camera: Camera) {
         p.position.copy(camera.position);
         p.angles.copy(camera.angles);
-        p.distance = camera.distance;
-        this.fov = camera.fov;
+        p.distance = Math.max(camera.distance, this.controller.zoomRange.x);
         this.controller.attach(p, false);
     }
 }

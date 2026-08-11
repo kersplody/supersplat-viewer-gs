@@ -1,73 +1,35 @@
-import {
-    type BoundingBox,
-    Mat4,
-    Quat,
-    Vec3
-} from 'playcanvas';
+import { Vec3 } from 'playcanvas';
+import type { BoundingBox } from 'playcanvas';
 
 import { createFigure8Track } from './animation/create-figure8-track';
 import { createRotateTrack } from './animation/create-rotate-track';
 import { AnimController } from './cameras/anim-controller';
-import { Camera, type CameraFrame, type CameraController } from './cameras/camera';
+import { Camera } from './cameras/camera';
+import type { CameraFrame, CameraController } from './cameras/camera';
 import { FlyController } from './cameras/fly-controller';
+import { FlySource } from './cameras/fly-source';
 import { OrbitController } from './cameras/orbit-controller';
+import type { TargetSource } from './cameras/target-navigation';
 import { WalkController } from './cameras/walk-controller';
 import { WalkSource } from './cameras/walk-source';
+import type { Collision } from './collision';
 import { easeOut } from './core/math';
-import { Annotation } from './settings';
-import { CameraMode, Global } from './types';
-import type { VoxelCollider } from './voxel-collider';
+import type { Annotation } from './settings';
+import type { CameraMode, Global } from './types';
 
 const tmpCamera = new Camera();
 const tmpv = new Vec3();
-const tmpFramePosition = new Vec3();
-const tmpFrameForward = new Vec3();
-const tmpFrameUp = new Vec3();
-const tmpFrameTarget = new Vec3();
-const tmpCameraForward = new Vec3();
-const tmpQuat = new Quat();
-const tmpQuat2 = new Quat();
-const tmpLookAt = new Mat4();
-const tmpPipDir = new Vec3();
-const tmpPipWorldDir = new Vec3();
-const tmpPipTarget = new Vec3();
 
-type TransformFrame = {
-    file_path?: string;
-    colmap_im_id?: number;
-    transform_matrix?: number[][];
-    sort_key?: number;
-};
+// Walk mode is only enabled when the scene's horizontal footprint is large
+// enough to walk around in. Vertical extent (Y) is irrelevant — a tall but
+// narrow scene isn't walkable. Both X and Z ranges must exceed this
+// minimum (in metres); below it walk mode is hidden and the viewer falls
+// back to fly as the default first-person mode.
+const WALK_MIN_HORIZONTAL_RANGE = 5;
 
-type PreparedTransformFrame = {
-    frame: TransformFrame;
-    camera: Camera;
-    runtimeCamera: Camera;
-    position: Vec3;
-    forward: Vec3;
-    fov: number;
-};
-
-type PipInspectState = {
-    active: boolean;
-    zoom?: number;
-    panX?: number;
-    panY?: number;
-    imageWidth?: number;
-    imageHeight?: number;
-    sourceWidth?: number;
-    sourceHeight?: number;
-    centerU?: number;
-    centerV?: number;
-};
-
-type CameraIntrinsics = {
-    width: number;
-    height: number;
-    fx: number;
-    fy: number;
-    cx: number;
-    cy: number;
+const isWalkAllowed = (bbox: BoundingBox, collision: Collision | null): boolean => {
+    const { x, z } = bbox.halfExtents;
+    return !!collision && x * 2 >= WALK_MIN_HORIZONTAL_RANGE && z * 2 >= WALK_MIN_HORIZONTAL_RANGE;
 };
 
 const createCamera = (position: Vec3, target: Vec3, fov: number) => {
@@ -79,139 +41,33 @@ const createCamera = (position: Vec3, target: Vec3, fov: number) => {
 
 const createFrameCamera = (bbox: BoundingBox, fov: number) => {
     const sceneSize = bbox.halfExtents.length();
-    const distance = sceneSize / Math.sin(fov / 180 * Math.PI * 0.5);
-    return createCamera(
-        new Vec3(2, 1, 2).normalize().mulScalar(distance).add(bbox.center),
-        bbox.center,
-        fov
-    );
-};
-
-const getSceneRotationDegrees = (settings: any) => {
-    const rotation = settings?.sceneRotation;
-    if (rotation && typeof rotation.x === 'number' && typeof rotation.y === 'number' && typeof rotation.z === 'number') {
-        return rotation;
-    }
-    return null;
-};
-
-const frameToCamera = (frame: TransformFrame, fov: number, worldRotation: Mat4 | null) => {
-    const m = frame.transform_matrix;
-    if (!Array.isArray(m) || m.length < 3 ||
-        !Array.isArray(m[0]) || m[0].length < 4 ||
-        !Array.isArray(m[1]) || m[1].length < 4 ||
-        !Array.isArray(m[2]) || m[2].length < 4) {
-        return null;
-    }
-
-    // COLMAP/NeRF transform_matrix is camera-to-world. Camera forward is -Z (third column negated).
-    // Keep the original frame camera orientation for PiP image->world matching, but also
-    // derive a roll-free runtime camera for orbit/fly controllers.
-    tmpFramePosition.set(m[0][3], m[1][3], m[2][3]);
-    tmpFrameForward.set(-m[0][2], -m[1][2], -m[2][2]).normalize();
-    tmpFrameUp.set(m[0][1], m[1][1], m[2][1]).normalize();
-
-    if (worldRotation) {
-        worldRotation.transformPoint(tmpFramePosition, tmpFramePosition);
-        worldRotation.transformVector(tmpFrameForward, tmpFrameForward).normalize();
-        worldRotation.transformVector(tmpFrameUp, tmpFrameUp).normalize();
-    }
-    const result = new Camera();
-    tmpFrameTarget.copy(tmpFramePosition).add(tmpFrameForward);
-    result.position.copy(tmpFramePosition);
-    result.distance = tmpFramePosition.distance(tmpFrameTarget);
-    tmpLookAt.setLookAt(tmpFramePosition, tmpFrameTarget, tmpFrameUp);
-    tmpQuat2.setFromMat4(tmpLookAt).getEulerAngles(result.angles);
-    result.fov = fov;
-
-    const runtimeCamera = new Camera();
-    runtimeCamera.look(tmpFramePosition, tmpFrameTarget);
-    runtimeCamera.fov = fov;
-
-    return {
-        camera: result,
-        runtimeCamera,
-        position: new Vec3().copy(tmpFramePosition),
-        forward: cameraForwardFromAngles(runtimeCamera, new Vec3()),
-        fov
-    };
-};
-
-const extractFrameSortKey = (frame: TransformFrame) => {
-    const filePath = frame.file_path ?? '';
-    const match = filePath.match(/frame_(\d+)(?:\.[^./\\]+)?$/i);
-    if (match) {
-        const parsed = Number.parseInt(match[1], 10);
-        if (!Number.isNaN(parsed)) {
-            return parsed;
-        }
-    }
-    return Number.POSITIVE_INFINITY;
-};
-
-const extractTransformsFov = (transforms: any, fallbackFov: number) => {
-    const w = transforms?.w;
-    const flX = transforms?.fl_x;
-    if (typeof w === 'number' && typeof flX === 'number' && w > 0 && flX > 0) {
-        return 2 * Math.atan(w / (2 * flX)) * 180 / Math.PI;
-    }
-
-    const cameraAngleX = transforms?.camera_angle_x;
-    if (typeof cameraAngleX === 'number' && cameraAngleX > 0) {
-        return cameraAngleX * 180 / Math.PI;
-    }
-
-    return fallbackFov;
-};
-
-const extractCameraIntrinsics = (transforms: any): CameraIntrinsics | null => {
-    const width = transforms?.w;
-    const height = transforms?.h;
-    if (!(typeof width === 'number' && typeof height === 'number' && width > 0 && height > 0)) {
-        return null;
-    }
-
-    const fx = transforms?.fl_x;
-    const fy = transforms?.fl_y;
-    if (!(typeof fx === 'number' && fx > 0) && !(typeof fy === 'number' && fy > 0)) {
-        return null;
-    }
-
-    const resolvedFx = typeof fx === 'number' && fx > 0 ? fx : fy;
-    const resolvedFy = typeof fy === 'number' && fy > 0 ? fy : fx;
-    const cx = typeof transforms?.cx === 'number' ? transforms.cx : width * 0.5;
-    const cy = typeof transforms?.cy === 'number' ? transforms.cy : height * 0.5;
-
-    return {
-        width,
-        height,
-        fx: resolvedFx,
-        fy: resolvedFy,
-        cx,
-        cy
-    };
-};
-
-const cameraForwardFromAngles = (camera: Camera, out: Vec3) => {
-    tmpQuat.setFromEulerAngles(camera.angles).transformVector(Vec3.FORWARD, out).normalize();
-    return out;
+    const distance = sceneSize / Math.sin((fov / 180) * Math.PI * 0.5);
+    return createCamera(new Vec3(2, 1, 2).normalize().mulScalar(distance).add(bbox.center), bbox.center, fov);
 };
 
 class CameraManager {
     update: (deltaTime: number, cameraFrame: CameraFrame) => void;
 
+    // Re-seed the active controller from the current camera pose and
+    // cancel any in-progress transition lerp. Use after externally
+    // mutating `camera` and/or `state.cameraMode` to make the change
+    // visible instantly.
+    snap: () => void;
+
     // holds the camera state
     camera = new Camera();
 
-    constructor(global: Global, bbox: BoundingBox, collider: VoxelCollider | null = null) {
-        const { events, settings, state, transforms } = global;
+    constructor(global: Global, bbox: BoundingBox, collision: Collision | null = null) {
+        const { events, settings, state } = global;
+
+        const walkAllowed = isWalkAllowed(bbox, collision);
 
         const camera0 = settings.cameras[0]?.initial;
         const defaultFov = camera0?.fov ?? 75;
         const frameCamera = createFrameCamera(bbox, defaultFov);
-        const resetCamera = camera0 ?
-            createCamera(new Vec3(camera0.position), new Vec3(camera0.target), camera0.fov) :
-            frameCamera;
+        const resetCamera = camera0
+            ? createCamera(new Vec3(camera0.position), new Vec3(camera0.target), camera0.fov)
+            : frameCamera;
 
         const getAnimTrack = (initial: Camera, isObjectExperience: boolean) => {
             const { animTracks } = settings;
@@ -228,7 +84,6 @@ class CameraManager {
             // non-object experience: gentle figure-8 motion from inside the scene
             initial.calcFocusPoint(tmpv);
             return createFigure8Track(initial.position, tmpv, initial.fov);
-
         };
 
         // object experience starts outside the bounding box
@@ -244,141 +99,21 @@ class CameraManager {
 
         controllers.orbit.fov = resetCamera.fov;
         controllers.fly.fov = resetCamera.fov;
-        controllers.fly.collider = collider;
-        controllers.walk.collider = collider;
+        controllers.fly.collision = collision;
+        controllers.walk.collision = collision;
 
         const walkSource = new WalkSource();
-        walkSource.onComplete = () => {
-            events.fire('walkComplete');
+        const flySource = new FlySource();
+        const sourcesByMode: Partial<Record<CameraMode, TargetSource>> = {
+            walk: walkSource,
+            fly: flySource
+        };
+        walkSource.onComplete = flySource.onComplete = () => {
+            events.fire('navigateComplete');
         };
 
         const getController = (cameraMode: CameraMode): CameraController => {
             return controllers[cameraMode] as CameraController;
-        };
-
-        const transformFrames = (Array.isArray(transforms?.frames) ? transforms.frames : []) as TransformFrame[];
-        const validTransformFrames = transformFrames
-        .filter(frame => Array.isArray(frame?.transform_matrix))
-        .map(frame => ({
-            ...frame,
-            sort_key: extractFrameSortKey(frame)
-        }))
-        .sort((a, b) => {
-            const byFrameNumber = a.sort_key - b.sort_key;
-            if (byFrameNumber !== 0) {
-                return byFrameNumber;
-            }
-            return (a.file_path ?? '').localeCompare(b.file_path ?? '');
-        });
-        const sceneRotationDegrees = getSceneRotationDegrees(settings);
-        const sceneRotation = sceneRotationDegrees ? new Mat4().setFromEulerAngles(
-            sceneRotationDegrees.x,
-            sceneRotationDegrees.y,
-            sceneRotationDegrees.z
-        ) : null;
-        const transformsFov = extractTransformsFov(transforms, defaultFov);
-        const transformsIntrinsics = extractCameraIntrinsics(transforms);
-        const preparedTransformFrames: PreparedTransformFrame[] = [];
-        validTransformFrames.forEach((frame) => {
-            const prepared = frameToCamera(frame, transformsFov, sceneRotation);
-            if (!prepared) {
-                return;
-            }
-            preparedTransformFrames.push({
-                frame,
-                ...prepared
-            });
-        });
-        let transformFrameIndex = -1;
-        let pipInspectActive = false;
-        let latestPipInspectState: PipInspectState = { active: false };
-
-        const emitSelectedTransformFrame = () => {
-            if (transformFrameIndex < 0 || transformFrameIndex >= preparedTransformFrames.length) {
-                return;
-            }
-
-            const selected = preparedTransformFrames[transformFrameIndex].frame;
-            events.fire('transformFrame:selected', {
-                index: transformFrameIndex,
-                count: preparedTransformFrames.length,
-                filePath: selected.file_path ?? null,
-                colmapImId: selected.colmap_im_id ?? null
-            });
-        };
-
-        const pickNearestFrameForCurrentView = (emitSelection: boolean = true): number => {
-            if (preparedTransformFrames.length === 0) {
-                return -1;
-            }
-
-            const sceneScale = Math.max(1e-3, bbox.halfExtents.length() * 2);
-            const currentForward = cameraForwardFromAngles(this.camera, tmpCameraForward);
-
-            let bestIndex = -1;
-            let bestScore = Number.POSITIVE_INFINITY;
-
-            for (let i = 0; i < preparedTransformFrames.length; i++) {
-                const candidate = preparedTransformFrames[i];
-                const positionDistNorm = this.camera.position.distance(candidate.position) / sceneScale;
-                const directionDot = Math.max(-1, Math.min(1, currentForward.dot(candidate.forward)));
-                const directionDiffNorm = Math.acos(directionDot) / Math.PI;
-                const fovDiffNorm = Math.min(1, Math.abs(this.camera.fov - candidate.fov) / 90);
-                const behindPenalty = directionDot < 0 ? 0.5 : 0;
-
-                const score = positionDistNorm * 0.4 + directionDiffNorm * 0.5 + fovDiffNorm * 0.1 + behindPenalty;
-                if (score < bestScore) {
-                    bestScore = score;
-                    bestIndex = i;
-                }
-            }
-
-            if (bestIndex < 0) {
-                return -1;
-            }
-
-            transformFrameIndex = bestIndex;
-            if (emitSelection) {
-                emitSelectedTransformFrame();
-            }
-            return bestIndex;
-        };
-
-        const gotoTransformFrameIndex = (index: number, logPrefix: string, retainCameraMode = false) => {
-            if (index < 0 || index >= preparedTransformFrames.length) {
-                return;
-            }
-
-            transformFrameIndex = index;
-            const selected = preparedTransformFrames[transformFrameIndex];
-
-            const shouldRetainFlyMode = retainCameraMode && state.cameraMode === 'fly';
-            state.cameraMode = shouldRetainFlyMode ? 'fly' : 'orbit';
-            if (shouldRetainFlyMode) {
-                controllers.fly.goto(selected.runtimeCamera);
-            } else {
-                controllers.orbit.goto(selected.runtimeCamera);
-            }
-            emitSelectedTransformFrame();
-
-            // console.log(`${logPrefix} ${transformFrameIndex + 1}/${preparedTransformFrames.length}: ${selected.frame.file_path ?? `colmap_im_id:${selected.frame.colmap_im_id ?? 'unknown'}`}`);
-        };
-
-        const stepTransformFrame = (step: 1 | -1) => {
-            const count = preparedTransformFrames.length;
-            if (count === 0) {
-                return;
-            }
-
-            if (transformFrameIndex < 0) {
-                const nearestIndex = pickNearestFrameForCurrentView();
-                if (nearestIndex < 0) {
-                    return;
-                }
-            }
-
-            transformFrameIndex = (transformFrameIndex + step + count) % count;
-            gotoTransformFrameIndex(transformFrameIndex, '[transforms] camera -> frame');
         };
 
         // set the global animation flag
@@ -386,12 +121,12 @@ class CameraManager {
         state.animationDuration = controllers.anim ? controllers.anim.animState.cursor.duration : 0;
 
         // initialize camera mode and initial camera position
-        state.cameraMode = state.hasAnimation ? 'anim' : (isObjectExperience ? 'orbit' : (collider ? 'walk' : 'fly'));
+        state.cameraMode = state.hasAnimation ? 'anim' : isObjectExperience ? 'orbit' : walkAllowed ? 'walk' : 'fly';
         this.camera.copy(resetCamera);
 
-        const target = new Camera(this.camera);             // the active controller updates this
-        const from = new Camera(this.camera);               // stores the previous camera state during transition
-        const defaultMode: CameraMode = isObjectExperience ? 'orbit' : (collider ? 'walk' : 'fly');
+        const target = new Camera(this.camera); // the active controller updates this
+        const from = new Camera(this.camera); // stores the previous camera state during transition
+        const defaultMode: CameraMode = isObjectExperience ? 'orbit' : walkAllowed ? 'walk' : 'fly';
         let fromMode: CameraMode = defaultMode;
 
         // tracks the mode to restore when exiting walk
@@ -403,16 +138,7 @@ class CameraManager {
         // transition state
         const transitionSpeed = 1.0;
         let transitionTimer = 1;
-        const previousPosition = new Vec3().copy(this.camera.position);
-        const previousForward = cameraForwardFromAngles(this.camera, new Vec3());
-        let previousFov = this.camera.fov;
-        let wasMoving = false;
-        let settledTime = 0;
-
-        const positionDeltaThreshold = 1e-3;
-        const angleDeltaThreshold = 0.2 * Math.PI / 180;
-        const fovDeltaThreshold = 0.01;
-        const settleDelaySeconds = 0.2;
+        let clearOrbitTargetOnTransitionEnd = false;
 
         // start a new camera transition from the current pose
         const startTransition = () => {
@@ -420,112 +146,27 @@ class CameraManager {
             transitionTimer = 0;
         };
 
-        const applyPipInspectCamera = (inspectState: PipInspectState) => {
-            if (!inspectState.active || transformFrameIndex < 0 || transformFrameIndex >= preparedTransformFrames.length) {
-                return;
-            }
-
-            const zoom = Math.max(1e-3, inspectState.zoom ?? 1);
-            const panX = inspectState.panX ?? 0;
-            const panY = inspectState.panY ?? 0;
-            const imageWidth = inspectState.imageWidth ?? 0;
-            const imageHeight = inspectState.imageHeight ?? 0;
-            if (!(imageWidth > 0 && imageHeight > 0)) {
-                return;
-            }
-
-            const prepared = preparedTransformFrames[transformFrameIndex];
-            const base = prepared.camera;
-            const baseFovRad = base.fov * Math.PI / 180;
-            const halfTan = Math.tan(baseFovRad * 0.5);
-            const pipFov = 2 * Math.atan(halfTan / zoom) * 180 / Math.PI;
-
-            if (transformsIntrinsics) {
-                let centerU = inspectState.centerU;
-                let centerV = inspectState.centerV;
-
-                if (!(typeof centerU === 'number' && typeof centerV === 'number')) {
-                    const sourceWidth = inspectState.sourceWidth ?? transformsIntrinsics.width;
-                    const sourceHeight = inspectState.sourceHeight ?? transformsIntrinsics.height;
-                    const pixelsPerImageX = imageWidth / sourceWidth;
-                    const pixelsPerImageY = imageHeight / sourceHeight;
-                    centerU = sourceWidth * 0.5 - panX / (zoom * pixelsPerImageX);
-                    centerV = sourceHeight * 0.5 - panY / (zoom * pixelsPerImageY);
-                }
-
-                const sourceWidth = inspectState.sourceWidth ?? transformsIntrinsics.width;
-                const sourceHeight = inspectState.sourceHeight ?? transformsIntrinsics.height;
-                const uInIntrinsics = centerU * (transformsIntrinsics.width / sourceWidth);
-                const vInIntrinsics = centerV * (transformsIntrinsics.height / sourceHeight);
-
-                const dirX = (uInIntrinsics - transformsIntrinsics.cx) / transformsIntrinsics.fx;
-                const dirY = -(vInIntrinsics - transformsIntrinsics.cy) / transformsIntrinsics.fy;
-                tmpPipDir.set(dirX, dirY, -1).normalize();
-            } else {
-                const imageAspect = imageWidth / imageHeight;
-                const halfTanY = halfTan;
-                const halfTanX = halfTanY * imageAspect;
-                const normX = -2 * panX / (zoom * imageWidth);
-                const normY = -2 * panY / (zoom * imageHeight);
-                tmpPipDir.set(
-                    normX * halfTanX,
-                    -normY * halfTanY,
-                    -1
-                ).normalize();
-            }
-
-            tmpQuat2.setFromEulerAngles(base.angles).transformVector(tmpPipDir, tmpPipWorldDir).normalize();
-            tmpPipTarget.copy(base.position).add(tmpPipWorldDir);
-
-            const shouldUseFly = state.cameraMode === 'fly';
-
-            if (shouldUseFly) {
-                // Match the selected frame pose while preserving fly mode controls.
-                tmpCamera.look(base.position, tmpPipTarget);
-                tmpCamera.fov = pipFov;
-                controllers.fly.goto(tmpCamera);
-
-                this.camera.copy(tmpCamera);
-                target.copy(tmpCamera);
-                from.copy(tmpCamera);
-                transitionTimer = 1;
-                return;
-            }
-
-            if (state.cameraMode === 'anim') {
-                state.cameraMode = 'orbit';
-            }
-
-            tmpCamera.look(base.position, tmpPipTarget);
-            tmpCamera.fov = pipFov;
-            controllers.orbit.goto(tmpCamera);
-
-            this.camera.copy(tmpCamera);
-            target.copy(tmpCamera);
-            from.copy(tmpCamera);
+        this.snap = () => {
+            getController(state.cameraMode).onEnter(this.camera);
+            target.copy(this.camera);
             transitionTimer = 1;
+            global.app.renderNextFrame = true;
         };
 
         // application update
         this.update = (deltaTime: number, frame: CameraFrame) => {
-
             // use dt of 0 if animation is paused
             const dt = state.cameraMode === 'anim' && state.animationPaused ? 0 : deltaTime;
 
             // update transition timer
+            const prevTransitionTimer = transitionTimer;
             transitionTimer = Math.min(1, transitionTimer + deltaTime * transitionSpeed);
 
             const controller = getController(state.cameraMode);
 
-            if (state.cameraMode === 'walk') {
-                walkSource.update(dt, this.camera.position, this.camera.angles, frame);
-            }
+            sourcesByMode[state.cameraMode]?.update(dt, this.camera, frame);
 
             controller.update(dt, frame, target);
-
-            if (pipInspectActive && latestPipInspectState.active) {
-                applyPipInspectCamera(latestPipInspectState);
-            }
 
             if (transitionTimer < 1) {
                 // lerp away from previous camera during transition
@@ -539,51 +180,37 @@ class CameraManager {
                 state.animationTime = controllers.anim.animState.cursor.value;
             }
 
-            const currentForward = cameraForwardFromAngles(this.camera, tmpCameraForward);
-            const positionDelta = this.camera.position.distance(previousPosition);
-            const dot = Math.max(-1, Math.min(1, previousForward.dot(currentForward)));
-            const angleDelta = Math.acos(dot);
-            const fovDelta = Math.abs(this.camera.fov - previousFov);
-            const movingNow = positionDelta > positionDeltaThreshold || angleDelta > angleDeltaThreshold || fovDelta > fovDeltaThreshold;
-
-            if (movingNow) {
-                wasMoving = true;
-                settledTime = 0;
-            } else if (wasMoving) {
-                settledTime += deltaTime;
-                if (settledTime >= settleDelaySeconds) {
-                    wasMoving = false;
-                    settledTime = 0;
-                    if (!pipInspectActive) {
-                        const previousIndex = transformFrameIndex;
-                        const nearestIndex = pickNearestFrameForCurrentView();
-                        if (nearestIndex >= 0 && nearestIndex !== previousIndex) {
-                            events.fire('transformFrame:nearestUpdated', {
-                                index: nearestIndex,
-                                count: preparedTransformFrames.length
-                            });
-                        }
-                    }
-                }
+            if (clearOrbitTargetOnTransitionEnd && prevTransitionTimer < 1 && transitionTimer === 1) {
+                clearOrbitTargetOnTransitionEnd = false;
+                events.fire('orbitTarget:clear');
             }
-
-            previousPosition.copy(this.camera.position);
-            previousForward.copy(currentForward);
-            previousFov = this.camera.fov;
         };
 
         // handle input events
-        events.on('inputEvent', (eventName, event, options?: { retainCameraMode?: boolean }) => {
+        events.on('inputEvent', (eventName) => {
             switch (eventName) {
                 case 'frame':
+                    events.fire('orbitTarget:clear');
                     state.cameraMode = 'orbit';
                     controllers.orbit.goto(frameCamera);
                     startTransition();
                     break;
                 case 'reset':
-                    state.cameraMode = 'orbit';
-                    controllers.orbit.goto(resetCamera);
-                    startTransition();
+                    if (state.cameraMode === 'walk') {
+                        walkSource.cancel();
+                        events.fire('navTarget:clear');
+                        startTransition();
+                        controllers.walk.resetToSpawn(target);
+                    } else if (state.cameraMode === 'fly') {
+                        flySource.cancel();
+                        startTransition();
+                        controllers.fly.resetToSpawn(target);
+                    } else {
+                        events.fire('orbitTarget:clear');
+                        state.cameraMode = 'orbit';
+                        controllers.orbit.goto(resetCamera);
+                        startTransition();
+                    }
                     break;
                 case 'playPause':
                     if (state.hasAnimation) {
@@ -599,7 +226,7 @@ class CameraManager {
                     state.cameraMode = 'fly';
                     break;
                 case 'toggleWalk':
-                    if (collider) {
+                    if (walkAllowed) {
                         if (state.cameraMode === 'walk') {
                             state.cameraMode = preWalkMode;
                         } else {
@@ -623,36 +250,12 @@ class CameraManager {
                         state.cameraMode = fromMode;
                     }
                     break;
-                case 'prevTransformFrame':
-                    stepTransformFrame(-1);
-                    break;
-                case 'nextTransformFrame':
-                    stepTransformFrame(1);
-                    break;
-                case 'gotoNearestTransformFrame': {
-                    const nearestIndex = pickNearestFrameForCurrentView(false);
-                    if (nearestIndex >= 0) {
-                        gotoTransformFrameIndex(nearestIndex, '[transforms] camera -> nearest frame');
-                    }
-                    break;
-                }
-                case 'gotoCurrentTransformFrame':
-                    if (transformFrameIndex >= 0) {
-                        gotoTransformFrameIndex(
-                            transformFrameIndex,
-                            '[transforms] camera -> selected frame',
-                            !!options?.retainCameraMode
-                        );
-                    }
-                    break;
             }
         });
 
         // handle camera mode switching
-        events.on('cameraMode:changed', (value, prev) => {
-            if (prev === 'walk') {
-                walkSource.cancelWalk();
-            }
+        events.on('cameraMode:changed', (value: CameraMode, prev: CameraMode) => {
+            sourcesByMode[prev]?.cancel();
 
             // snapshot the current pose before any controller mutation
             startTransition();
@@ -689,9 +292,12 @@ class CameraManager {
 
             controllers.orbit.goto(tmpCamera);
             startTransition();
+            clearOrbitTargetOnTransitionEnd = true;
         });
 
         events.on('annotation.activate', (annotation: Annotation) => {
+            events.fire('orbitTarget:clear');
+
             // switch to orbit camera on pick
             state.cameraMode = 'orbit';
 
@@ -699,39 +305,31 @@ class CameraManager {
 
             // construct camera
             tmpCamera.fov = initial.fov;
-            tmpCamera.look(
-                new Vec3(initial.position),
-                new Vec3(initial.target)
-            );
+            tmpCamera.look(new Vec3(initial.position), new Vec3(initial.target));
 
             controllers.orbit.goto(tmpCamera);
             startTransition();
         });
 
-        events.on('pipInspect:changed', (inspectState: PipInspectState) => {
-            latestPipInspectState = inspectState ?? { active: false };
-            pipInspectActive = !!inspectState?.active;
-            applyPipInspectCamera(inspectState);
-        });
-
-        // tap-to-walk: start auto-walking toward a picked 3D position
-        events.on('walkTo', (position: Vec3, normal: Vec3) => {
-            if (state.cameraMode === 'walk') {
-                walkSource.walkTo(position);
-                events.fire('walkTarget:set', position, normal);
+        // tap-to-navigate: start auto-driving the active mode toward a picked position
+        events.on('navigateTo', (position: Vec3, normal: Vec3, speedMul = 1) => {
+            const source = sourcesByMode[state.cameraMode];
+            if (source) {
+                source.navigateTo(position, speedMul);
+                events.fire('navTarget:set', position, normal);
             }
         });
 
-        // cancel any active auto-walk
-        events.on('walkCancel', () => {
-            walkSource.cancelWalk();
-            events.fire('walkTarget:clear');
+        // cancel any active auto-navigation in the current mode
+        events.on('navigateCancel', () => {
+            sourcesByMode[state.cameraMode]?.cancel();
+            events.fire('navTarget:clear');
         });
 
-        events.on('walkComplete', () => {
-            events.fire('walkTarget:clear');
+        events.on('navigateComplete', () => {
+            events.fire('navTarget:clear');
         });
     }
 }
 
-export { CameraManager };
+export { CameraManager, isWalkAllowed };

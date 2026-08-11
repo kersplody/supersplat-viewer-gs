@@ -1,29 +1,40 @@
-import {
-    Color,
-    Entity,
-    Quat,
-    Vec3,
-    type CameraComponent
-} from 'playcanvas';
-import { XrControllers } from 'playcanvas/scripts/esm/xr-controllers.mjs';
-import { XrNavigation } from 'playcanvas/scripts/esm/xr-navigation.mjs';
+import { Color, DEVICETYPE_WEBGL2, Quat, Vec3, XrManager } from 'playcanvas';
+import type { CameraComponent, Entity } from 'playcanvas';
+import { XrControllers } from 'playcanvas/scripts/esm/xr/xr-controllers.mjs';
+import { XrNavigation } from 'playcanvas/scripts/esm/xr/xr-navigation.mjs';
 
-import { Global } from './types';
+import type { Global } from './types';
 
 // On entering/exiting AR, we need to set the camera clear color to transparent black
 const initXr = (global: Global) => {
-    const { app, events, state, camera, settings } = global;
+    const { app, events, state, camera, renderer } = global;
 
-    state.hasAR = app.xr.isAvailable('immersive-ar');
-    state.hasVR = app.xr.isAvailable('immersive-vr');
+    // Engine availability is backend-aware (2.20+): under WebGPU a session is only
+    // reported available when it can start on the current device (browser exposes
+    // XRGPUBinding, e.g. Safari on Apple Vision Pro). A session the WebGPU device
+    // can't host may still run after reloading into WebGL, so keep the buttons
+    // visible then — the UI offers that reload when the session can't start directly.
+    let webglAR = false;
+    let webglVR = false;
 
-    // initialize ar/vr
-    app.xr.on('available:immersive-ar', (available) => {
-        state.hasAR = available;
-    });
-    app.xr.on('available:immersive-vr', (available) => {
-        state.hasVR = available;
-    });
+    const updateAvailable = () => {
+        state.hasAR = app.xr.isAvailable('immersive-ar') || webglAR;
+        state.hasVR = app.xr.isAvailable('immersive-vr') || webglVR;
+    };
+
+    updateAvailable();
+    app.xr.on('available', updateAvailable);
+
+    if (renderer === 'webgpu') {
+        Promise.all([
+            XrManager.isDeviceSupported(DEVICETYPE_WEBGL2, 'immersive-ar'),
+            XrManager.isDeviceSupported(DEVICETYPE_WEBGL2, 'immersive-vr')
+        ]).then(([ar, vr]) => {
+            webglAR = ar;
+            webglVR = vr;
+            updateAvailable();
+        });
+    }
 
     const parent = camera.parent as Entity;
     const clearColor = new Color();
@@ -38,134 +49,6 @@ const initXr = (global: Global) => {
     parent.script.create(XrControllers);
     parent.script.create(XrNavigation);
 
-    const teleportMaxDistance = 10;
-    const clickMaxDurationMs = 350;
-    const dragStartThreshold = 0.03;
-    const dragMoveThreshold = 0.005;
-
-    const parentPos = new Vec3();
-    const inputHandlers = new Map<any, {
-        handleSelectStart: () => void,
-        handleSelectEnd: () => void
-    }>();
-    const movedInputs = new Set<any>();
-    const dragState = new Map<any, {
-        startTime: number,
-        startHeight: number,
-        startOrigin: Vec3,
-        active: boolean,
-        moved: boolean,
-        dragging: boolean
-    }>();
-
-    const getInputOrigin = (inputSource: any): Vec3 | null => {
-        if (!inputSource) {
-            return null;
-        }
-        try {
-            if (typeof inputSource.getOrigin === 'function') {
-                const origin = inputSource.getOrigin();
-                if (origin) {
-                    return origin;
-                }
-            }
-        } catch {
-            // Some runtimes may not expose origin for every input type.
-        }
-        try {
-            if (typeof inputSource.getPosition === 'function') {
-                const pos = inputSource.getPosition();
-                if (pos) {
-                    return pos;
-                }
-            }
-        } catch {
-            // Grip pose may be unavailable.
-        }
-        return null;
-    };
-
-    const getInputDirection = (inputSource: any): Vec3 | null => {
-        if (!inputSource) {
-            return null;
-        }
-        try {
-            if (typeof inputSource.getDirection === 'function') {
-                const direction = inputSource.getDirection();
-                if (direction) {
-                    return direction;
-                }
-            }
-        } catch {
-            // Direction may be unavailable.
-        }
-        return null;
-    };
-
-    const getHandJointPosition = (inputSource: any): Vec3 | null => {
-        const hand = inputSource?.hand;
-        if (!hand || typeof hand.getJointById !== 'function') {
-            return null;
-        }
-        const joint = hand.getJointById('index-finger-tip') || hand.getJointById('wrist');
-        if (!joint || typeof joint.getPosition !== 'function') {
-            return null;
-        }
-        try {
-            return joint.getPosition();
-        } catch {
-            return null;
-        }
-    };
-
-    const getDragOrigin = (inputSource: any): Vec3 | null => {
-        const jointPos = getHandJointPosition(inputSource);
-        if (jointPos) {
-            return jointPos;
-        }
-        return getInputOrigin(inputSource);
-    };
-
-    const findPlaneIntersection = (origin: Vec3, direction: Vec3): Vec3 | null => {
-        if (Math.abs(direction.y) < 0.00001) {
-            return null;
-        }
-
-        const t = -origin.y / direction.y;
-        if (t < 0) {
-            return null;
-        }
-
-        return new Vec3(
-            origin.x + direction.x * t,
-            0,
-            origin.z + direction.z * t
-        );
-    };
-
-    const tryTeleport = (inputSource: any) => {
-        const origin = getInputOrigin(inputSource);
-        const direction = getInputDirection(inputSource);
-        if (!origin || !direction) {
-            return;
-        }
-
-        const hitPoint = findPlaneIntersection(origin, direction);
-        if (!hitPoint) {
-            return;
-        }
-
-        const distance = hitPoint.distance(parent.getPosition());
-        if (distance > teleportMaxDistance) {
-            return;
-        }
-
-        const current = parent.getPosition();
-        hitPoint.y = current.y;
-        parent.setPosition(hitPoint);
-        app.renderNextFrame = true;
-    };
-
     app.xr.on('start', () => {
         app.autoRender = true;
 
@@ -178,8 +61,7 @@ const initXr = (global: Global) => {
         cameraRotation.getEulerAngles(angles);
 
         // copy transform to parent to XR/VR mode starts in the right place
-        const xrHeight = Number.isFinite(settings.xrheight) ? settings.xrheight : 0;
-        parent.setPosition(cameraPosition.x, xrHeight, cameraPosition.z);
+        parent.setPosition(cameraPosition.x, 0, cameraPosition.z);
         parent.setEulerAngles(0, angles.y, 0);
 
         if (app.xr.type === 'immersive-ar') {
@@ -201,14 +83,6 @@ const initXr = (global: Global) => {
             camera.camera.clearColor = clearColor;
         }
 
-        for (const [inputSource, handlers] of inputHandlers) {
-            inputSource.off('selectstart', handlers.handleSelectStart);
-            inputSource.off('selectend', handlers.handleSelectEnd);
-        }
-        inputHandlers.clear();
-        dragState.clear();
-        movedInputs.clear();
-
         // Restore the canvas to the correct position in the DOM after exiting XR. In
         // some browsers (e.g. Chrome on Android) the canvas is moved to a new root
         // during XR, and needs to be moved back on exit.
@@ -216,96 +90,6 @@ const initXr = (global: Global) => {
             document.body.prepend(app.graphicsDevice.canvas);
             app.renderNextFrame = true;
         });
-    });
-
-    app.xr.input.on('add', (inputSource) => {
-        const handleSelectStart = () => {
-            const origin = getDragOrigin(inputSource);
-            const startOrigin = new Vec3();
-            if (origin) {
-                startOrigin.copy(origin);
-            }
-
-            dragState.set(inputSource, {
-                startTime: (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now(),
-                startHeight: parent.getPosition().y,
-                startOrigin,
-                active: !!origin,
-                moved: false,
-                dragging: false
-            });
-        };
-
-        const handleSelectEnd = () => {
-            const state = dragState.get(inputSource);
-            if (!state) {
-                return;
-            }
-
-            const now = (typeof performance !== 'undefined' && performance.now) ? performance.now() : Date.now();
-            const heldMs = now - state.startTime;
-
-            const suppressTeleport = movedInputs.has(inputSource);
-            if (!state.moved && !suppressTeleport && heldMs <= clickMaxDurationMs) {
-                tryTeleport(inputSource);
-            }
-
-            dragState.delete(inputSource);
-            movedInputs.delete(inputSource);
-        };
-
-        inputSource.on('selectstart', handleSelectStart);
-        inputSource.on('selectend', handleSelectEnd);
-        inputHandlers.set(inputSource, {
-            handleSelectStart,
-            handleSelectEnd
-        });
-    });
-
-    app.xr.input.on('remove', (inputSource) => {
-        const handlers = inputHandlers.get(inputSource);
-        if (handlers) {
-            inputSource.off('selectstart', handlers.handleSelectStart);
-            inputSource.off('selectend', handlers.handleSelectEnd);
-            inputHandlers.delete(inputSource);
-        }
-        dragState.delete(inputSource);
-        movedInputs.delete(inputSource);
-    });
-
-    app.on('update', () => {
-        if (!app.xr.active) {
-            return;
-        }
-
-        for (const [inputSource, state] of dragState) {
-            const origin = getDragOrigin(inputSource);
-            if (!origin) {
-                continue;
-            }
-
-            if (!state.active) {
-                state.startOrigin.copy(origin);
-                state.startHeight = parent.getPosition().y;
-                state.active = true;
-                continue;
-            }
-
-            const deltaY = origin.y - state.startOrigin.y;
-            if (!state.moved && Math.abs(deltaY) >= dragMoveThreshold) {
-                state.moved = true;
-                movedInputs.add(inputSource);
-            }
-            if (!state.dragging && Math.abs(deltaY) >= dragStartThreshold) {
-                state.dragging = true;
-            }
-
-            if (state.dragging) {
-                parentPos.copy(parent.getPosition());
-                parent.setPosition(parentPos.x, state.startHeight + deltaY, parentPos.z);
-                app.renderNextFrame = true;
-            }
-        }
     });
 
     const start = (type: string) => {

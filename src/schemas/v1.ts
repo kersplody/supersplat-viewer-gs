@@ -1,49 +1,34 @@
-import {
-    assertObject,
-    assertBoolean,
-    assertNumber,
-    assertString,
-    assertEnum,
-    assertArray,
-    assertNumberArray
-} from './validate-utils';
+import { assertObject, assertNumber, assertString, assertEnum, assertArray, assertNumberArray } from './validate-utils';
 
 type AnimTrack = {
-    name: string,
-    duration: number,
-    frameRate?: number,
-    target: 'camera',
-    loopMode: 'none' | 'repeat' | 'pingpong',
-    interpolation: 'step' | 'spline',
-    smoothness?: number,
+    name: string;
+    duration: number;
+    frameRate?: number;
+    target: 'camera';
+    loopMode: 'none' | 'repeat' | 'pingpong';
+    interpolation: 'step' | 'spline';
+    smoothness?: number;
     keyframes: {
-        times: number[],
+        times: number[];
         values: {
-            position: number[],
-            target: number[],
-        }
-    }
+            position: number[];
+            target: number[];
+        };
+    };
 };
 
 type ExperienceSettings = {
-    sceneRotation?: {
-        x: number,
-        y: number,
-        z: number,
-    },
-    camera?: {
-        fov?: number,
-        position?: number[],
-        target?: number[],
-        startAnim?: 'none' | 'orbit' | 'animTrack',
-        animTrack?: string | null
-    },
-    xrheight?: number,
-    hasFramePreviews?: boolean,
-    background?: {
-        color?: number[]
-    },
-    animTracks?: AnimTrack[]
+    camera: {
+        fov?: number;
+        position?: number[];
+        target?: number[];
+        startAnim?: 'none' | 'orbit' | 'animTrack';
+        animTrack?: string | null;
+    };
+    background: {
+        color?: number[];
+    };
+    animTracks?: AnimTrack[];
 };
 
 const validateAnimTrack = (data: unknown, path: string): AnimTrack => {
@@ -68,30 +53,16 @@ const validateAnimTrack = (data: unknown, path: string): AnimTrack => {
 const validateV1 = (data: unknown): ExperienceSettings => {
     const obj = assertObject(data, 'settings');
 
-    if (obj.sceneRotation !== undefined) {
-        const sceneRotation = assertObject(obj.sceneRotation, 'settings.sceneRotation');
-        assertNumber(sceneRotation.x, 'settings.sceneRotation.x');
-        assertNumber(sceneRotation.y, 'settings.sceneRotation.y');
-        assertNumber(sceneRotation.z, 'settings.sceneRotation.z');
-    }
+    const camera = assertObject(obj.camera, 'settings.camera');
+    if (camera.fov !== undefined) assertNumber(camera.fov, 'settings.camera.fov');
+    if (camera.position !== undefined) assertNumberArray(camera.position, 'settings.camera.position');
+    if (camera.target !== undefined) assertNumberArray(camera.target, 'settings.camera.target');
+    if (camera.startAnim !== undefined)
+        assertEnum(camera.startAnim, ['none', 'orbit', 'animTrack'] as const, 'settings.camera.startAnim');
+    if (camera.animTrack != null) assertString(camera.animTrack, 'settings.camera.animTrack');
 
-    if (obj.camera !== undefined) {
-        const camera = assertObject(obj.camera, 'settings.camera');
-        if (camera.fov !== undefined) assertNumber(camera.fov, 'settings.camera.fov');
-        if (camera.position !== undefined) assertNumberArray(camera.position, 'settings.camera.position');
-        if (camera.target !== undefined) assertNumberArray(camera.target, 'settings.camera.target');
-        if (camera.startAnim !== undefined) assertEnum(camera.startAnim, ['none', 'orbit', 'animTrack'] as const, 'settings.camera.startAnim');
-        if (camera.animTrack != null) assertString(camera.animTrack, 'settings.camera.animTrack');
-    }
-
-    if (obj.background !== undefined) {
-        const bg = assertObject(obj.background, 'settings.background');
-        if (bg.color !== undefined) assertNumberArray(bg.color, 'settings.background.color');
-    }
-
-    if (obj.hasFramePreviews !== undefined) {
-        assertBoolean(obj.hasFramePreviews, 'settings.hasFramePreviews');
-    }
+    const bg = assertObject(obj.background, 'settings.background');
+    if (bg.color !== undefined) assertNumberArray(bg.color, 'settings.background.color');
 
     if (obj.animTracks !== undefined) {
         const tracks = assertArray(obj.animTracks, 'settings.animTracks');

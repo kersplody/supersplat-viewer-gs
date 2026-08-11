@@ -1,8 +1,3 @@
-export type Vec3 = [number, number, number];
-export type Rgba = [number, number, number, number];
-export type LineDecorator = 'none' | 'box' | 'arrowheads';
-export type MeasurementUnit = 'm' | 'ft' | 'in' | 'cm';
-
 export type AnimTrack = {
     name: string;
     duration: number;
@@ -31,21 +26,11 @@ export type Camera = {
 };
 
 export type Annotation = {
-    position: Vec3;
+    position: [number, number, number];
     title: string;
     text: string;
-    textColor?: Rgba;
-    msgBoxColor?: Rgba;
-    extras?: any;
+    extras?: unknown;
     camera: Camera;
-    kind?: 'point' | 'line' | 'box';
-    points?: [Vec3, Vec3] | [Vec3, Vec3, Vec3];
-    lineColor?: Rgba;
-    lineDecorator?: LineDecorator;
-    lineThickness?: number;
-    boxColor?: Rgba;
-    showMeasurement?: boolean;
-    measurementUnits?: MeasurementUnit;
 };
 
 export type PostEffectSettings = {
@@ -83,7 +68,6 @@ export type ExperienceSettings = {
     tonemapping: 'none' | 'linear' | 'filmic' | 'hejl' | 'aces' | 'aces2' | 'neutral';
     highPrecisionRendering: boolean;
     soundUrl?: string;
-    scene_meas_scale?: number;
     background: {
         color: [number, number, number];
         skyboxUrl?: string;
@@ -95,5 +79,5 @@ export type ExperienceSettings = {
     startMode: 'default' | 'animTrack' | 'annotation';
 };
 
-export function importSettings(settings: any): ExperienceSettings;
+export function importSettings(settings: unknown): ExperienceSettings;
 export function validateSettings(settings: unknown): void;
