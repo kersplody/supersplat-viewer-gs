@@ -12,6 +12,10 @@ type Config = {
     skyboxUrl?: string;
     contentUrl?: string;
     contents?: Promise<Response>;
+    secondaryContentUrl?: string;
+    secondaryContents?: Promise<Response>;
+    differenceOverlayUrl?: string;
+    differenceOverlayContents?: Promise<Response>;
     collisionUrl?: string;
 
     noui: boolean;
@@ -46,6 +50,9 @@ type State = {
     hasCollisionOverlay: boolean;
     walkAllowed: boolean;
     collisionOverlayEnabled: boolean;
+    hasSecondarySplat: boolean;
+    hasDifferenceOverlay: boolean;
+    activeSplat: 1 | 2;
     isFullscreen: boolean;
     controlsHidden: boolean;
     showAnnotations: boolean;
@@ -55,6 +62,8 @@ type State = {
 type Global = {
     app: AppBase;
     settings: ExperienceSettings;
+    transforms: unknown;
+    imdat: unknown;
     config: Config;
     state: State;
     events: EventHandler;

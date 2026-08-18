@@ -1,3 +1,8 @@
+export type Vec3 = [number, number, number];
+export type Rgba = [number, number, number, number];
+export type LineDecorator = 'none' | 'box' | 'arrowheads';
+export type MeasurementUnit = 'm' | 'ft' | 'in' | 'cm';
+
 export type AnimTrack = {
     name: string;
     duration: number;
@@ -16,8 +21,8 @@ export type AnimTrack = {
 };
 
 export type CameraPose = {
-    position: [number, number, number];
-    target: [number, number, number];
+    position: Vec3;
+    target: Vec3;
     fov: number;
 };
 
@@ -26,11 +31,21 @@ export type Camera = {
 };
 
 export type Annotation = {
-    position: [number, number, number];
+    position: Vec3;
     title: string;
     text: string;
+    textColor?: Rgba;
+    msgBoxColor?: Rgba;
     extras?: unknown;
     camera: Camera;
+    kind?: 'point' | 'line' | 'box';
+    points?: [Vec3] | [Vec3, Vec3] | [Vec3, Vec3, Vec3];
+    lineColor?: Rgba;
+    lineDecorator?: LineDecorator;
+    lineThickness?: number;
+    boxColor?: Rgba;
+    showMeasurement?: boolean;
+    measurementUnits?: MeasurementUnit;
 };
 
 export type PostEffectSettings = {
@@ -68,6 +83,13 @@ export type ExperienceSettings = {
     tonemapping: 'none' | 'linear' | 'filmic' | 'hejl' | 'aces' | 'aces2' | 'neutral';
     highPrecisionRendering: boolean;
     soundUrl?: string;
+    scene_meas_scale?: number;
+    hasFramePreviews?: boolean;
+    sceneRotation?: {
+        x: number;
+        y: number;
+        z: number;
+    };
     background: {
         color: [number, number, number];
         skyboxUrl?: string;

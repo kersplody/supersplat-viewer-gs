@@ -9,8 +9,8 @@ const isWasdKey = (event: KeyboardEvent) =>
 
 /**
  * Keyboard shortcuts that switch camera mode and toggle UI affordances.
- * Listens on `window` so the user can press 1/2/3, V, G, H, F, R, Space,
- * or Escape regardless of which element has focus.
+ * Listens on `window` so the user can switch scene layers and use the viewer's
+ * navigation shortcuts regardless of which element has focus.
  */
 class ModeShortcuts {
     private _global: Global | null = null;
@@ -39,15 +39,40 @@ class ModeShortcuts {
             return;
         }
 
+        if (event.code === 'BracketLeft' || event.key === '[' || event.key === '{') {
+            events.fire('inputEvent', 'prevTransformFrame', event);
+            return;
+        }
+        if (event.code === 'BracketRight' || event.key === ']' || event.key === '}') {
+            events.fire('inputEvent', 'nextTransformFrame', event);
+            return;
+        }
+
         switch (event.key) {
             case '1':
-                state.cameraMode = 'orbit';
+                if (state.hasSecondarySplat) {
+                    events.fire('inputEvent', 'showSplat', 1, event);
+                } else {
+                    state.cameraMode = 'orbit';
+                }
                 break;
             case '2':
-                state.cameraMode = 'fly';
+                if (state.hasSecondarySplat) {
+                    events.fire('inputEvent', 'showSplat', 2, event);
+                } else {
+                    state.cameraMode = 'fly';
+                }
                 break;
             case '3':
-                events.fire('inputEvent', 'toggleWalk');
+                if (state.hasDifferenceOverlay) {
+                    events.fire('inputEvent', 'toggleDifferenceOverlay', event);
+                } else {
+                    events.fire('inputEvent', 'toggleWalk');
+                }
+                break;
+            case 'p':
+            case 'P':
+                events.fire('inputEvent', 'gotoNearestTransformFrame', event);
                 break;
             case 'v':
                 if (state.hasCollisionOverlay) {
@@ -64,13 +89,17 @@ class ModeShortcuts {
                 events.fire('inputEvent', 'reset', event);
                 break;
             default:
-                if (isWasdKey(event) && state.inputMode === 'desktop') {
-                    if (!isCaptureMode(state.cameraMode)) {
-                        state.cameraMode = 'fly';
-                    }
-                    if (!state.gamingControls) {
-                        state.gamingControls = true;
-                    }
+                // Match the pre-merge behavior: WASD enters pointer-captured
+                // gaming controls only in walk mode. In orbit/fly, keyboard
+                // movement remains available without trapping the pointer or
+                // permanently hiding the UI.
+                if (
+                    isWasdKey(event) &&
+                    state.inputMode === 'desktop' &&
+                    state.cameraMode === 'walk' &&
+                    !state.gamingControls
+                ) {
+                    state.gamingControls = true;
                 }
                 break;
         }

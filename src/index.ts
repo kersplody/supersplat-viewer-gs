@@ -25,8 +25,15 @@ import { Viewer } from './viewer';
 import { initXr } from './xr';
 import { version as appVersion } from '../package.json';
 
-const loadGsplat = async (app: AppBase, config: Config, progressCallback: (progress: number) => void) => {
-    const { contents, contentUrl } = config;
+const loadGsplat = async (
+    app: AppBase,
+    config: Config,
+    progressCallback: (progress: number) => void,
+    contentUrl = config.contentUrl,
+    contents = config.contents,
+    entityName = 'gsplat',
+    forceNonUnified = false
+) => {
     const c = contents as unknown as ArrayBuffer;
     const filename = new URL(contentUrl, location.href).pathname.split('/').pop();
     const data = filename.toLowerCase() === 'meta.json' ? await (await contents).json() : undefined;
@@ -34,10 +41,10 @@ const loadGsplat = async (app: AppBase, config: Config, progressCallback: (progr
 
     return new Promise<Entity>((resolve, reject) => {
         asset.on('load', () => {
-            const entity = new Entity('gsplat');
+            const entity = new Entity(entityName);
             entity.setLocalEulerAngles(0, 0, 180);
             entity.addComponent('gsplat', {
-                unified: true,
+                unified: !forceNonUnified,
                 asset
             });
             app.root.addChild(entity);
@@ -207,7 +214,13 @@ const initCanvas = (global: Global) => {
     apply();
 };
 
-const main = async (canvas: HTMLCanvasElement, settingsJson: unknown, config: Config) => {
+const main = async (
+    canvas: HTMLCanvasElement,
+    settingsJson: unknown,
+    config: Config,
+    transformsJson: unknown = { frames: [] },
+    imdatJson: unknown = null
+) => {
     const { app, camera, renderer } = await createApp(canvas, config);
 
     // create events
@@ -237,6 +250,9 @@ const main = async (canvas: HTMLCanvasElement, settingsJson: unknown, config: Co
         hasCollisionOverlay: false,
         walkAllowed: false,
         collisionOverlayEnabled: false,
+        hasSecondarySplat: false,
+        hasDifferenceOverlay: false,
+        activeSplat: 1,
         isFullscreen: false,
         controlsHidden: false,
         showAnnotations: localStorage.getItem('showAnnotations') !== 'false',
@@ -246,6 +262,8 @@ const main = async (canvas: HTMLCanvasElement, settingsJson: unknown, config: Co
     const global: Global = {
         app,
         settings: importSettings(settingsJson),
+        transforms: transformsJson,
+        imdat: imdatJson,
         config,
         state,
         events,
@@ -277,6 +295,40 @@ const main = async (canvas: HTMLCanvasElement, settingsJson: unknown, config: Co
     const gsplatLoad = loadGsplat(app, config, (progress: number) => {
         state.progress = progress;
     });
+
+    const secondaryGsplatLoad =
+        config.secondaryContentUrl && config.secondaryContents
+            ? loadGsplat(app, config, () => undefined, config.secondaryContentUrl, config.secondaryContents, 'gsplat2')
+                  .then((entity) => {
+                      entity.enabled = false;
+                      return entity;
+                  })
+                  .catch((err: Error): null => {
+                      console.warn('Failed to load secondary splat:', err);
+                      return null;
+                  })
+            : undefined;
+
+    const differenceOverlayLoad =
+        config.differenceOverlayUrl && config.differenceOverlayContents
+            ? loadGsplat(
+                  app,
+                  config,
+                  () => undefined,
+                  config.differenceOverlayUrl,
+                  config.differenceOverlayContents,
+                  'differenceOverlay',
+                  true
+              )
+                  .then((entity) => {
+                      entity.enabled = false;
+                      return entity;
+                  })
+                  .catch((err: Error): null => {
+                      console.warn('Failed to load difference overlay:', err);
+                      return null;
+                  })
+            : undefined;
 
     // Load skybox (continue without if it fails — e.g. CORS, 404)
     const skyboxLoad =
@@ -325,7 +377,7 @@ const main = async (canvas: HTMLCanvasElement, settingsJson: unknown, config: Co
     }
 
     // Create the viewer
-    return new Viewer(global, gsplatLoad, skyboxLoad, collisionLoad);
+    return new Viewer(global, gsplatLoad, secondaryGsplatLoad, differenceOverlayLoad, skyboxLoad, collisionLoad);
 };
 
 console.log(`SuperSplat Viewer v${appVersion} | Engine v${engineVersion} (${engineRevision})`);

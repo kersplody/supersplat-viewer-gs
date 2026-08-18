@@ -3,6 +3,7 @@ import type { EventHandler } from 'playcanvas';
 import { version as appVersion } from '../package.json';
 
 import { localize } from './localization';
+import { initPip } from './pip';
 import type { Annotation } from './settings';
 import { Tooltip } from './tooltip';
 import type { Global } from './types';
@@ -147,8 +148,15 @@ const initJoystick = (
 const initAnnotationNav = (
     dom: Record<string, HTMLElement>,
     events: EventHandler,
-    state: { loaded: boolean; inputMode: string; controlsHidden: boolean; showAnnotations: boolean },
-    annotations: Annotation[]
+    state: {
+        loaded: boolean;
+        inputMode: string;
+        controlsHidden: boolean;
+        showAnnotations: boolean;
+        cameraMode: string;
+    },
+    annotations: Annotation[],
+    hasFramePreviews: boolean
 ) => {
     // Only show navigator when there are at least 2 annotations
     if (annotations.length < 2) return;
@@ -161,10 +169,11 @@ const initAnnotationNav = (
 
     const updateMode = () => {
         if (!state.loaded) return;
-        if (!state.showAnnotations) {
-            dom.annotationNav.classList.add('hidden');
-            return;
-        }
+        const hidden =
+            !state.showAnnotations ||
+            (hasFramePreviews && state.cameraMode === 'fly' && dom.pipFrameWrap.classList.contains('hidden'));
+        dom.annotationNav.classList.toggle('hidden', hidden);
+        if (hidden) return;
         dom.annotationNav.classList.remove('desktop', 'touch', 'hidden');
         dom.annotationNav.classList.add(state.inputMode);
     };
@@ -207,6 +216,8 @@ const initAnnotationNav = (
         updateFade();
     });
     events.on('inputMode:changed', updateMode);
+    events.on('cameraMode:changed', updateMode);
+    events.on('pipVisibility:changed', updateMode);
     events.on('controlsHidden:changed', updateFade);
     events.on('showAnnotations:changed', () => {
         updateMode();
@@ -240,6 +251,15 @@ const initUI = (global: Global) => {
     const docRoot = document.documentElement;
     const dom = [
         'ui',
+        'flightMetadataTop',
+        'pipFrameWrap',
+        'pipFrameThumb',
+        'pipFrameFullscreen',
+        'pipFrameFull',
+        'pipPrevTransformFrame',
+        'pipNextTransformFrame',
+        'pipMetadataToggle',
+        'pipMetadataPanel',
         'controlsWrap',
         'arMode',
         'vrMode',
@@ -288,6 +308,7 @@ const initUI = (global: Global) => {
         'joystickBase',
         'joystick',
         'showCollision',
+        'showAnnotations',
         'desktopShowCollisionHelp',
         'tooltip',
         'annotationNav',
@@ -340,6 +361,9 @@ const initUI = (global: Global) => {
         },
         { passive: false }
     );
+
+    // Restore the nearest source-frame preview and full-resolution inspection UI.
+    const hasFramePreviews = initPip(global, dom);
 
     // Handle loading progress updates
     events.on('progress:changed', (progress) => {
@@ -448,12 +472,19 @@ const initUI = (global: Global) => {
 
     // Annotation visibility toggle
     const updateAnnotationsVisibility = () => {
-        dom.annotationsRow.classList.toggle('hidden', global.settings.annotations.length === 0);
+        const hasAnnotations = global.settings.annotations.length > 0;
+        dom.annotationsRow.classList.toggle('hidden', !hasAnnotations);
+        dom.showAnnotations.classList.toggle('hidden', !hasAnnotations);
         dom.annotationsCheck.classList.toggle('active', state.showAnnotations);
+        dom.showAnnotations.classList.toggle('active', state.showAnnotations);
         global.app.renderNextFrame = true;
     };
 
     dom.annotationsRow.addEventListener('click', () => {
+        state.showAnnotations = !state.showAnnotations;
+    });
+
+    dom.showAnnotations.addEventListener('click', () => {
         state.showAnnotations = !state.showAnnotations;
     });
 
@@ -798,7 +829,7 @@ const initUI = (global: Global) => {
     initJoystick(dom, events, state);
 
     // Initialize annotation navigator
-    initAnnotationNav(dom, events, state, global.settings.annotations);
+    initAnnotationNav(dom, events, state, global.settings.annotations, hasFramePreviews);
 
     // Hide all UI (poster, loading bar, controls)
     if (config.noui) {
@@ -816,6 +847,7 @@ const initUI = (global: Global) => {
     tooltip.register(dom.reset, localize('tooltip.reset-camera'), 'bottom');
     tooltip.register(dom.frame, localize('tooltip.frame-scene'), 'bottom');
     tooltip.register(dom.showCollision, localize('tooltip.show-collision'), 'top');
+    tooltip.register(dom.showAnnotations, localize('settings.show-annotations'), 'top');
     tooltip.register(dom.settings, localize('tooltip.settings'), 'top');
     tooltip.register(dom.info, localize('tooltip.help'), 'top');
     tooltip.register(dom.arMode, localize('tooltip.enter-ar'), 'top');

@@ -1,4 +1,12 @@
-import { assertObject, assertNumber, assertString, assertEnum, assertArray, assertNumberArray } from './validate-utils';
+import {
+    assertObject,
+    assertNumber,
+    assertString,
+    assertBoolean,
+    assertEnum,
+    assertArray,
+    assertNumberArray
+} from './validate-utils';
 
 type AnimTrack = {
     name: string;
@@ -18,6 +26,12 @@ type AnimTrack = {
 };
 
 type ExperienceSettings = {
+    hasFramePreviews?: boolean;
+    sceneRotation?: {
+        x: number;
+        y: number;
+        z: number;
+    };
     camera: {
         fov?: number;
         position?: number[];
@@ -52,6 +66,14 @@ const validateAnimTrack = (data: unknown, path: string): AnimTrack => {
 
 const validateV1 = (data: unknown): ExperienceSettings => {
     const obj = assertObject(data, 'settings');
+
+    if (obj.hasFramePreviews !== undefined) assertBoolean(obj.hasFramePreviews, 'settings.hasFramePreviews');
+    if (obj.sceneRotation !== undefined) {
+        const rotation = assertObject(obj.sceneRotation, 'settings.sceneRotation');
+        assertNumber(rotation.x, 'settings.sceneRotation.x');
+        assertNumber(rotation.y, 'settings.sceneRotation.y');
+        assertNumber(rotation.z, 'settings.sceneRotation.z');
+    }
 
     const camera = assertObject(obj.camera, 'settings.camera');
     if (camera.fov !== undefined) assertNumber(camera.fov, 'settings.camera.fov');

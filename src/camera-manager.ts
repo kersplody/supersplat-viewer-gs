@@ -15,6 +15,7 @@ import { WalkSource } from './cameras/walk-source';
 import type { Collision } from './collision';
 import { easeOut } from './core/math';
 import type { Annotation } from './settings';
+import { TransformFrameNavigator } from './transform-frames';
 import type { CameraMode, Global } from './types';
 
 const tmpCamera = new Camera();
@@ -146,6 +147,35 @@ class CameraManager {
             transitionTimer = 0;
         };
 
+        const transformFrames = new TransformFrameNavigator(global, bbox, defaultFov, this.camera, {
+            goTo: (camera, retainFlyMode) => {
+                const useFly = retainFlyMode && state.cameraMode === 'fly';
+                events.fire('orbitTarget:clear');
+                state.cameraMode = useFly ? 'fly' : 'orbit';
+                if (useFly) {
+                    controllers.fly.goto(camera);
+                } else {
+                    controllers.orbit.goto(camera);
+                }
+                global.app.renderNextFrame = true;
+            },
+            applyPip: (camera) => {
+                if (state.cameraMode === 'anim' || state.cameraMode === 'walk') {
+                    state.cameraMode = 'orbit';
+                }
+                if (state.cameraMode === 'fly') {
+                    controllers.fly.goto(camera);
+                } else {
+                    controllers.orbit.goto(camera);
+                }
+                this.camera.copy(camera);
+                target.copy(camera);
+                from.copy(camera);
+                transitionTimer = 1;
+                global.app.renderNextFrame = true;
+            }
+        });
+
         this.snap = () => {
             getController(state.cameraMode).onEnter(this.camera);
             target.copy(this.camera);
@@ -184,10 +214,15 @@ class CameraManager {
                 clearOrbitTargetOnTransitionEnd = false;
                 events.fire('orbitTarget:clear');
             }
+
+            transformFrames.update(deltaTime);
         };
 
         // handle input events
-        events.on('inputEvent', (eventName) => {
+        events.on('inputEvent', (eventName, _event, options?: { retainCameraMode?: boolean }) => {
+            if (transformFrames.handleInput(eventName, options)) {
+                return;
+            }
             switch (eventName) {
                 case 'frame':
                     events.fire('orbitTarget:clear');

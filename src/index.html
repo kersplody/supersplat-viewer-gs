@@ -22,14 +22,44 @@
             const skyboxUrl = url.searchParams.get('skybox');
             const collisionUrl = url.searchParams.get('collision') ?? url.searchParams.get('voxel');
             const settingsUrl = url.searchParams.has('settings') ? url.searchParams.get('settings') : './settings.json';
-            const contentUrl = url.searchParams.has('content')
-                ? url.searchParams.get('content')
-                : './scene.compressed.ply';
+            const transformsUrl = url.searchParams.has('transforms')
+                ? url.searchParams.get('transforms')
+                : './transforms.json';
+            const imdatUrl = url.searchParams.has('imdat') ? url.searchParams.get('imdat') : './imdat.json';
+            const hasContentOverride = url.searchParams.has('content');
+            const contentUrl = hasContentOverride ? url.searchParams.get('content') : './scene.compressed.ply';
+            const secondaryContentUrl = url.searchParams.has('content2')
+                ? url.searchParams.get('content2')
+                : hasContentOverride
+                  ? null
+                  : './scene.2.compressed.ply';
+            const differenceOverlayUrl = url.searchParams.has('overlay')
+                ? url.searchParams.get('overlay')
+                : './redblue.compressed.ply';
 
             const renderer = url.searchParams.has('webgl') ? 'webgl' : 'webgpu';
 
             const budgetParam = url.searchParams.get('budget');
             const budget = budgetParam !== null ? Number(budgetParam) : undefined;
+
+            const fetchJsonOrDefault = async (jsonUrl, fallback) => {
+                try {
+                    const response = await fetch(jsonUrl);
+                    return response.ok ? await response.json() : fallback;
+                } catch (_error) {
+                    return fallback;
+                }
+            };
+
+            const fetchOptionalContent = async (contentUrl) => {
+                if (!contentUrl) return null;
+                try {
+                    const response = await fetch(contentUrl);
+                    return response.ok ? { contentUrl, response } : null;
+                } catch (_error) {
+                    return null;
+                }
+            };
 
             const sseConfig = {
                 poster: posterUrl && createImage(posterUrl),
@@ -56,7 +86,11 @@
 
             window.sse = {
                 config: sseConfig,
-                settings: fetch(settingsUrl).then((response) => response.json())
+                settings: fetch(settingsUrl).then((response) => response.json()),
+                transforms: fetchJsonOrDefault(transformsUrl, { frames: [] }),
+                imdat: fetchJsonOrDefault(imdatUrl, null),
+                secondaryContent: fetchOptionalContent(secondaryContentUrl),
+                differenceOverlay: fetchOptionalContent(differenceOverlayUrl)
             };
         </script>
     </head>
@@ -65,6 +99,33 @@
 
         <div id="ui">
             <div id="poster"></div>
+            <div id="flightMetadataTop" class="hidden"></div>
+            <div id="pipFrameWrap" class="hidden">
+                <img id="pipFrameThumb" alt="Frame thumbnail" />
+            </div>
+            <div id="pipFrameFullscreen" class="hidden">
+                <img id="pipFrameFull" alt="Full-resolution frame" />
+                <div id="pipInspectTop">
+                    PiP Inspect Mode • Mouse Wheel/Pinch Zoom; Left Click Drag/Two Finger Drag Pan; Tap/Click to Close
+                </div>
+                <div id="pipInspectBottom">PiP Inspect Mode • Tap/Click to Close</div>
+                <button id="pipPrevTransformFrame" class="hidden" type="button" aria-label="Previous frame">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+                        <g class="stroke"><use href="#chevronLeftIcon" /></g>
+                        <g class="fill"><use href="#chevronLeftIcon" /></g>
+                    </svg>
+                </button>
+                <button id="pipNextTransformFrame" class="hidden" type="button" aria-label="Next frame">
+                    <svg xmlns="http://www.w3.org/2000/svg" width="20" height="20">
+                        <g class="stroke"><use href="#chevronRightIcon" /></g>
+                        <g class="fill"><use href="#chevronRightIcon" /></g>
+                    </svg>
+                </button>
+                <button id="pipMetadataToggle" class="hidden" type="button" aria-label="Toggle image metadata">
+                    i
+                </button>
+                <div id="pipMetadataPanel" class="hidden"></div>
+            </div>
 
             <!-- SuperSplat Branding -->
             <a id="viewerBranding" class="hidden" target="_blank" rel="noopener noreferrer">
@@ -165,6 +226,12 @@
                             <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">
                                 <g class="stroke"><use href="#voxelIcon" /></g>
                                 <g class="fill"><use href="#voxelIcon" /></g>
+                            </svg>
+                        </button>
+                        <button id="showAnnotations" class="controlButton hidden">
+                            <svg xmlns="http://www.w3.org/2000/svg" width="24" height="24">
+                                <g class="stroke"><use href="#annotationIcon" /></g>
+                                <g class="fill"><use href="#annotationIcon" /></g>
                             </svg>
                         </button>
 
@@ -366,18 +433,6 @@
                             </div>
                             <div class="control-spacer"></div>
                             <h1 data-i18n="help.section.modes">Mode Switching</h1>
-                            <div class="control-item">
-                                <span class="control-action" data-i18n="help.action.orbit-mode">Orbit Mode</span>
-                                <span class="control-key">1</span>
-                            </div>
-                            <div class="control-item">
-                                <span class="control-action" data-i18n="help.action.fly-mode">Fly Mode</span>
-                                <span class="control-key">2</span>
-                            </div>
-                            <div class="control-item">
-                                <span class="control-action" data-i18n="help.action.toggle-walk">Toggle Walk</span>
-                                <span class="control-key">3</span>
-                            </div>
                             <div class="control-item">
                                 <span class="control-action" data-i18n="help.action.toggle-gaming"
                                     >Toggle Gaming Controls</span
@@ -636,6 +691,14 @@
                     d="M8 1L2 4.5v7L8 15l6-3.5v-7L8 1zm0 1.15L12.85 5 8 7.85 3.15 5 8 2.15zM3 5.85l4.5 2.6v5.1L3 10.95V5.85zm5.5 7.7v-5.1L13 5.85v5.1l-4.5 2.6z"
                 />
             </symbol>
+            <symbol id="annotationIcon" viewBox="0 0 24 24">
+                <path
+                    d="M5 5.75A2.75 2.75 0 0 1 7.75 3h8.5A2.75 2.75 0 0 1 19 5.75v5.5A2.75 2.75 0 0 1 16.25 14H12.8l-3.93 3.37A.75.75 0 0 1 7.75 16.8V14A2.75 2.75 0 0 1 5 11.25v-5.5Zm2.75-1.25c-.69 0-1.25.56-1.25 1.25v5.5c0 .69.56 1.25 1.25 1.25H8.5a.75.75 0 0 1 .75.75v1.87l2.96-2.54a.75.75 0 0 1 .49-.18h3.55c.69 0 1.25-.56 1.25-1.25v-5.5c0-.69-.56-1.25-1.25-1.25h-8.5Z"
+                />
+                <path
+                    d="M9 8.25A.75.75 0 0 1 9.75 7.5h4.5a.75.75 0 0 1 0 1.5h-4.5A.75.75 0 0 1 9 8.25Zm0 2.5A.75.75 0 0 1 9.75 10h3a.75.75 0 0 1 0 1.5h-3A.75.75 0 0 1 9 10.75Z"
+                />
+            </symbol>
             <symbol id="exitFullscreenIcon" viewBox="0 0 24 24">
                 <path
                     d="M8 15.0996C8.49706 15.0996 8.90039 15.5029 8.90039 16V21C8.90039 21.4971 8.49706 21.9004 8 21.9004C7.50294 21.9004 7.09961 21.4971 7.09961 21V16.9004H3C2.50294 16.9004 2.09961 16.4971 2.09961 16C2.09961 15.5029 2.50294 15.0996 3 15.0996H8Z"
@@ -656,7 +719,7 @@
         <script type="module">
             import { main } from './index.js';
 
-            const { config, settings } = window.sse;
+            const { config, settings, transforms, imdat, secondaryContent, differenceOverlay } = window.sse;
             const { poster } = config;
 
             // Show the poster image
@@ -672,8 +735,21 @@
 
             document.addEventListener('DOMContentLoaded', async () => {
                 const canvas = document.getElementById('application-canvas');
-                const settingsJson = await settings;
-                const viewer = await main(canvas, settingsJson, config);
+                const [settingsJson, transformsJson, imdatJson, secondary, overlay] = await Promise.all([
+                    settings,
+                    transforms,
+                    imdat,
+                    secondaryContent,
+                    differenceOverlay
+                ]);
+                const resolvedConfig = {
+                    ...config,
+                    secondaryContentUrl: secondary?.contentUrl,
+                    secondaryContents: secondary ? Promise.resolve(secondary.response) : undefined,
+                    differenceOverlayUrl: overlay?.contentUrl,
+                    differenceOverlayContents: overlay ? Promise.resolve(overlay.response) : undefined
+                };
+                const viewer = await main(canvas, settingsJson, resolvedConfig, transformsJson, imdatJson);
             });
         </script>
     </body>
