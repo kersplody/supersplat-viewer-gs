@@ -380,6 +380,6 @@ const main = async (
     return new Viewer(global, gsplatLoad, secondaryGsplatLoad, differenceOverlayLoad, skyboxLoad, collisionLoad);
 };
 
-console.log(`SuperSplat Viewer v${appVersion} | Engine v${engineVersion} (${engineRevision})`);
+console.log(`GeoSplat Viewer v${appVersion} | Engine v${engineVersion} (${engineRevision})`);
 
 export { main };
