@@ -1,11 +1,12 @@
-import { Script, type Vec3, type Quat } from 'playcanvas';
+import { Script } from 'playcanvas';
+import type { Asset, ContainerResource, Entity, GraphNode, Quat, Vec3, XrInputSource, XrJoint } from 'playcanvas';
 
 type ControllerEntry = {
-    entity: any;
-    jointMap: Map<any, any>;
+    entity: Entity;
+    jointMap: Map<XrJoint, GraphNode>;
 };
 
-const getInputPosition = (inputSource: any): Vec3 | null => {
+const getInputPosition = (inputSource: XrInputSource): Vec3 | null => {
     if (!inputSource) {
         return null;
     }
@@ -32,7 +33,7 @@ const getInputPosition = (inputSource: any): Vec3 | null => {
     return null;
 };
 
-const getInputRotation = (inputSource: any): Quat | null => {
+const getInputRotation = (inputSource: XrInputSource): Quat | null => {
     if (!inputSource) {
         return null;
     }
@@ -60,7 +61,7 @@ class XrControllers extends Script {
      */
     basePath = 'https://cdn.jsdelivr.net/npm/@webxr-input-profiles/assets/dist/profiles';
 
-    controllers = new Map<any, ControllerEntry>();
+    controllers = new Map<XrInputSource, ControllerEntry>();
 
     initialize() {
         if (!this.app.xr) {
@@ -92,10 +93,13 @@ class XrControllers extends Script {
                         const layoutPath = profile.layouts?.[inputSource.handedness]?.assetPath || '';
                         const assetPath = `${this.basePath}/${profile.profileId}/${inputSource.handedness}${layoutPath.replace(/^\/?(left|right)/, '')}`;
 
-                        const asset = await new Promise<any>((resolve, reject) => {
-                            this.app.assets.loadFromUrl(assetPath, 'container', (err: unknown, loadedAsset: any) => {
-                                if (err) reject(err);
-                                else resolve(loadedAsset);
+                        const asset = await new Promise<Asset>((resolve, reject) => {
+                            this.app.assets.loadFromUrl(assetPath, 'container', (err, loadedAsset) => {
+                                if (err || !loadedAsset) {
+                                    reject(err ?? new Error(`No asset returned for ${assetPath}`));
+                                } else {
+                                    resolve(loadedAsset);
+                                }
                             });
                         });
 
@@ -107,7 +111,7 @@ class XrControllers extends Script {
                 });
 
                 const results = await Promise.all(profilePromises);
-                const successfulResult = results.find(result => result !== null);
+                const successfulResult = results.find((result) => result !== null);
 
                 if (!successfulResult) {
                     console.warn('No compatible profiles found');
@@ -115,7 +119,7 @@ class XrControllers extends Script {
                 }
 
                 const { asset } = successfulResult;
-                const container = asset?.resource;
+                const container = asset?.resource as ContainerResource | undefined;
                 if (!container || typeof container.instantiateRenderEntity !== 'function') {
                     console.warn('Controller profile loaded without a renderable container');
                     return;
@@ -124,7 +128,7 @@ class XrControllers extends Script {
                 const entity = container.instantiateRenderEntity();
                 this.app.root.addChild(entity);
 
-                const jointMap = new Map<any, any>();
+                const jointMap = new Map<XrJoint, GraphNode>();
                 if (inputSource.hand) {
                     for (const joint of inputSource.hand.joints) {
                         const jointEntity = entity.findByName(joint.id);

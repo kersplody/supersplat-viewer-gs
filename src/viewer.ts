@@ -418,6 +418,44 @@ class Viewer {
             };
         });
 
+        const { gsplat } = app.scene;
+
+        // Scene-level gsplat params. Set before any load resolves: streaming starts on the first
+        // frame after the gsplat component is created, and lodUpdateAngle / lodBehindPenalty shape
+        // which nodes that first pass pulls in.
+
+        // these two allow LOD behind camera to drop, saves lots of splats
+        gsplat.lodUpdateAngle = 90;
+        gsplat.lodBehindPenalty = 5;
+        gsplat.minContribution = 1;
+        gsplat.alphaClip = 1 / 255;
+        gsplat.antiAlias = config.aa;
+
+        // same performance, but rotating on slow devices does not give us unsorted splats on sides
+        gsplat.radialSorting = true;
+
+        // apply before streaming starts: this bakes into the work-buffer copies as
+        // persistent per-splat data, so the first loaded splats must already carry
+        // it (later changes only apply on a full rebuild)
+        gsplat.debug = config.colorize ? GSPLAT_DEBUG_LOD : GSPLAT_DEBUG_NONE;
+
+        // Clamp to the coarsest LOD for the fastest possible reveal. This chains off gsplatLoad
+        // alone (not the Promise.all below): the octree starts streaming on the first frame after
+        // the component is created, and already-requested files are never cancelled — so waiting
+        // on skybox/collision here would let a full-detail burst queue up and block the reveal
+        // until it has all downloaded. The handler runs as a microtask of the asset's load event,
+        // so no frame renders unclamped.
+        if (!config.fullload) {
+            gsplatLoad.then((entity) => {
+                const gsplatComponent = entity.gsplat as GSplatComponent;
+                const resource = gsplatComponent.resource as GSplatOctreeResourceLike | null;
+                const lodLevels = resource?.octree?.lodLevels;
+                if (lodLevels) {
+                    gsplatComponent.lodRangeMax = gsplatComponent.lodRangeMin = lodLevels - 1;
+                }
+            });
+        }
+
         // wait for the model to load
         Promise.all([gsplatLoad, secondaryGsplatLoad, differenceOverlayLoad, skyboxLoad, collisionLoad]).then(
             (results) => {
@@ -511,8 +549,6 @@ class Viewer {
 
                 this.debugPanel = new DebugPanel(global, this.cameraManager);
 
-                const { gsplat } = app.scene;
-
                 // quality budget
                 const budgets = {
                     mobile: {
@@ -535,7 +571,7 @@ class Viewer {
                     };
 
                     gsplat.splatBudget = budget() * 1000000;
-                    gsplat.colorUpdateAngle = state.performanceMode ? 2 : 0;
+                    gsplat.colorUpdateAngle = state.performanceMode ? 1 : 0.2;
                     gsplatComponent.lodRangeMin = 0;
                     gsplatComponent.lodRangeMax = 1000;
 
@@ -547,29 +583,7 @@ class Viewer {
                 if (config.fullload) {
                     // reveal once full quality has finished loading (used for screenshots)
                     applyPerfSettings();
-                } else {
-                    // reveal once low lod has loaded for fastest possible reveal
-                    const resource = results[0].gsplat.resource as GSplatOctreeResourceLike | null;
-                    const lodLevels = resource?.octree?.lodLevels;
-                    if (lodLevels) {
-                        gsplatComponent.lodRangeMax = gsplatComponent.lodRangeMin = lodLevels - 1;
-                    }
                 }
-
-                // these two allow LOD behind camera to drop, saves lots of splats
-                gsplat.lodUpdateAngle = 90;
-                gsplat.lodBehindPenalty = 5;
-                gsplat.minContribution = 1;
-                gsplat.alphaClip = 1 / 255;
-                gsplat.antiAlias = config.aa;
-
-                // same performance, but rotating on slow devices does not give us unsorted splats on sides
-                gsplat.radialSorting = true;
-
-                // apply before streaming starts: this bakes into the work-buffer copies as
-                // persistent per-splat data, so the first loaded splats must already carry
-                // it (later changes only apply on a full rebuild)
-                gsplat.debug = config.colorize ? GSPLAT_DEBUG_LOD : GSPLAT_DEBUG_NONE;
 
                 const eventHandler = app.systems.gsplat;
 
